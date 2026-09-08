@@ -229,10 +229,16 @@ export function hasContent(day: DayRecord | undefined): boolean {
   )
 }
 
-/** 할일 완수율. 트래킹 그래프에서는 뺐지만 인사이트에서는 쓴다. */
+/**
+ * 할일 완수율. 트래킹 그래프에서는 뺐지만 인사이트에서는 쓴다.
+ * 화면에서 할 일과 일정이 한 목록으로 합쳐졌으므로 여기서도 같이 센다.
+ */
 export function todoRate(day: DayRecord | undefined): number | null {
-  if (!day || day.todos.length === 0) return null
-  return (day.todos.filter((t) => t.done).length / day.todos.length) * 100
+  if (!day) return null
+  const total = day.todos.length + day.events.length
+  if (total === 0) return null
+  const done = day.todos.filter((t) => t.done).length + day.events.filter((e) => e.done).length
+  return (done / total) * 100
 }
 
 // ─── 통계 ────────────────────────────────────────────────────────────────────

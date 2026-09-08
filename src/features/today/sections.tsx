@@ -1,14 +1,27 @@
 import { useMemo, useState } from 'react'
-import { Card, Checkbox, Chip, Empty, ScaleInput, Segmented, initial } from '../../components/ui'
+import {
+  Card,
+  Checkbox,
+  Chip,
+  CollapsibleCard,
+  Empty,
+  ScaleInput,
+  Segmented,
+  initial,
+} from '../../components/ui'
 import { StarRating } from '../../components/StarRating'
 import { BulbIcon, PlusIcon, TrashIcon } from '../../components/icons'
 import { useStore } from '../../lib/store'
 import { newId } from '../../lib/storage'
 import { formatTime } from '../../lib/date'
 import {
+  EVENT_KIND_COLOR,
+  EVENT_KIND_LABEL,
+  INTENSITY_LABEL,
   MEAL_LABELS,
   PERSON_COLORS,
   WORKOUT_PARTS,
+  type EventKind,
   type ISODate,
   type Intensity,
   type Level,
@@ -20,59 +33,153 @@ interface SectionProps {
 
 // ── 할일 ─────────────────────────────────────────────────────────────────────
 
-export function TodoSection({ date }: SectionProps) {
-  const { getDay, updateDay } = useStore()
+export function TodoSection({ date, onOpenPerson }: SectionProps & { onOpenPerson?: (id: string) => void }) {
+  const { getDay, updateDay, data } = useStore()
   const day = getDay(date)
   const [draft, setDraft] = useState('')
+  const [detail, setDetail] = useState(false)
+  const [kind, setKind] = useState<EventKind>('appointment')
+  const [time, setTime] = useState('')
+  const [people, setPeople] = useState<string[]>([])
+
+  const personById = useMemo(
+    () => Object.fromEntries(data.people.map((p) => [p.id, p])),
+    [data.people],
+  )
+
+  const resetForm = () => {
+    setDraft('')
+    setTime('')
+    setPeople([])
+    setDetail(false)
+  }
 
   const add = () => {
     const text = draft.trim()
     if (!text) return
-    updateDay(date, (d) => ({
-      todos: [...d.todos, { id: newId(), text, done: false, createdAt: Date.now() }],
-    }))
-    setDraft('')
+    if (detail) {
+      updateDay(date, (d) => ({
+        events: [
+          ...d.events,
+          {
+            id: newId(),
+            title: text,
+            kind,
+            time: time || null,
+            personIds: kind === 'appointment' ? people : [],
+            done: false,
+            createdAt: Date.now(),
+          },
+        ],
+      }))
+      resetForm()
+    } else {
+      updateDay(date, (d) => ({
+        todos: [...d.todos, { id: newId(), text, done: false, createdAt: Date.now() }],
+      }))
+      setDraft('')
+    }
   }
 
-  const done = day.todos.filter((t) => t.done).length
+  /** 일정과 그냥 적은 할 일을 한 줄기로 묶는다. 둘 다 결국 '오늘 해야 할 것'이다. */
+  const rows = useMemo(() => {
+    type Row = {
+      key: string
+      title: string
+      done: boolean
+      time: string | null
+      kind: EventKind | null
+      personIds: string[]
+      createdAt: number
+      toggle: (v: boolean) => void
+      remove: () => void
+    }
+    const list: Row[] = [
+      ...day.events.map((ev) => ({
+        key: `e-${ev.id}`,
+        title: ev.title,
+        done: ev.done,
+        time: ev.time,
+        kind: ev.kind,
+        personIds: ev.personIds,
+        createdAt: ev.createdAt,
+        toggle: (v: boolean) =>
+          updateDay(date, (d) => ({
+            events: d.events.map((x) => (x.id === ev.id ? { ...x, done: v } : x)),
+          })),
+        remove: () =>
+          updateDay(date, (d) => ({ events: d.events.filter((x) => x.id !== ev.id) })),
+      })),
+      ...day.todos.map((t) => ({
+        key: `t-${t.id}`,
+        title: t.text,
+        done: t.done,
+        time: null,
+        kind: null,
+        personIds: [],
+        createdAt: t.createdAt,
+        toggle: (v: boolean) =>
+          updateDay(date, (d) => ({
+            todos: d.todos.map((x) => (x.id === t.id ? { ...x, done: v } : x)),
+          })),
+        remove: () => updateDay(date, (d) => ({ todos: d.todos.filter((x) => x.id !== t.id) })),
+      })),
+    ]
+    // 시각이 정해진 것부터, 그 안에서는 이른 시각 순
+    return list.sort((a, b) => {
+      if (a.time && b.time) return a.time.localeCompare(b.time)
+      if (a.time) return -1
+      if (b.time) return 1
+      return a.createdAt - b.createdAt
+    })
+  }, [day.events, day.todos, date, updateDay])
+
+  const done = rows.filter((r) => r.done).length
 
   return (
     <Card
       title="오늘 할 일"
       mark="var(--accent)"
       action={
-        day.todos.length > 0 ? (
+        rows.length > 0 ? (
           <span className="todo-progress">
             <span className="big">{done}</span>
-            <span className="small">/ {day.todos.length}</span>
+            <span className="small">/ {rows.length}</span>
           </span>
         ) : null
       }
     >
-      {day.todos.length === 0 ? (
-        <Empty>오늘 할 일을 하나씩 적어보세요.</Empty>
+      {rows.length === 0 ? (
+        <Empty>할 일이나 약속, 마감을 적어보세요.</Empty>
       ) : (
         <ul>
-          {day.todos.map((todo) => (
-            <li key={todo.id} className="todo" data-done={todo.done}>
-              <Checkbox
-                checked={todo.done}
-                label={todo.text}
-                onChange={(v) =>
-                  updateDay(date, (d) => ({
-                    todos: d.todos.map((t) => (t.id === todo.id ? { ...t, done: v } : t)),
-                  }))
-                }
-              />
-              <span className="todo-text">{todo.text}</span>
-              <button
-                type="button"
-                className="icon-btn plain"
-                aria-label="삭제"
-                onClick={() =>
-                  updateDay(date, (d) => ({ todos: d.todos.filter((t) => t.id !== todo.id) }))
-                }
-              >
+          {rows.map((row) => (
+            <li key={row.key} className="todo" data-done={row.done}>
+              <Checkbox checked={row.done} label={row.title} onChange={row.toggle} />
+              <span className="todo-text">
+                <span className="todo-title">{row.title}</span>
+                {(row.kind || row.time || row.personIds.length > 0) && (
+                  <span className="event-meta">
+                    {row.kind && (
+                      <span className="event-kind" style={{ background: EVENT_KIND_COLOR[row.kind] }}>
+                        {EVENT_KIND_LABEL[row.kind]}
+                      </span>
+                    )}
+                    {row.time && <span>{row.time}</span>}
+                    {row.personIds.map((id) => (
+                      <button
+                        key={id}
+                        type="button"
+                        className="link-btn"
+                        onClick={() => onOpenPerson?.(id)}
+                      >
+                        {personById[id]?.name ?? '알 수 없음'}
+                      </button>
+                    ))}
+                  </span>
+                )}
+              </span>
+              <button type="button" className="icon-btn plain" aria-label="삭제" onClick={row.remove}>
                 <TrashIcon />
               </button>
             </li>
@@ -83,17 +190,87 @@ export function TodoSection({ date }: SectionProps) {
       <div className="input-row" style={{ marginTop: 12 }}>
         <input
           className="input"
-          placeholder="할 일 추가"
+          placeholder={detail ? '무엇을' : '할 일 추가'}
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
           onKeyDown={(e) => {
             if (e.key === 'Enter') add()
           }}
         />
-        <button type="button" className="icon-btn" onClick={add} aria-label="할 일 추가">
+        <button type="button" className="icon-btn" onClick={add} aria-label="추가">
           <PlusIcon />
         </button>
       </div>
+
+      {detail && (
+        <div className="stack" style={{ marginTop: 10 }}>
+          <div className="seg">
+            {(['appointment', 'deadline', 'task'] as EventKind[]).map((k) => (
+              <button
+                key={k}
+                type="button"
+                className="seg-btn"
+                aria-pressed={kind === k}
+                onClick={() => setKind(k)}
+              >
+                {EVENT_KIND_LABEL[k]}
+              </button>
+            ))}
+          </div>
+
+          <label className="field">
+            <span className="field-label">시각 (선택)</span>
+            <input
+              type="time"
+              className="input"
+              value={time}
+              onChange={(e) => setTime(e.target.value)}
+            />
+          </label>
+
+          {kind === 'appointment' && data.people.length > 0 && (
+            <div className="field">
+              <span className="field-label">누구와</span>
+              <div className="person-scroll">
+                {data.people.map((p) => {
+                  const active = people.includes(p.id)
+                  return (
+                    <button
+                      key={p.id}
+                      type="button"
+                      className="person-pill"
+                      aria-pressed={active}
+                      onClick={() =>
+                        setPeople((prev) =>
+                          prev.includes(p.id) ? prev.filter((x) => x !== p.id) : [...prev, p.id],
+                        )
+                      }
+                    >
+                      <span
+                        className="avatar"
+                        data-selected={active}
+                        style={{ background: PERSON_COLORS[p.colorIndex % PERSON_COLORS.length] }}
+                      >
+                        {initial(p.name)}
+                      </span>
+                      <span className="name">{p.name}</span>
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      <button
+        type="button"
+        className="btn ghost sm"
+        style={{ marginTop: 10 }}
+        onClick={() => (detail ? resetForm() : setDetail(true))}
+      >
+        {detail ? '간단히 적기' : '+ 약속·마감으로 추가'}
+      </button>
     </Card>
   )
 }
@@ -143,8 +320,21 @@ export function SleepSection({ date }: SectionProps) {
       },
     }))
 
+  const filled = sleep.hours !== null || Boolean(sleep.bedTime) || Boolean(sleep.wakeTime)
+  const summary = (
+    <>
+      {sleep.hours !== null ? `${sleep.hours}시간` : '—'}
+      {sleep.bedTime && sleep.wakeTime && (
+        <span className="dim">
+          {' '}
+          · {sleep.bedTime} → {sleep.wakeTime}
+        </span>
+      )}
+    </>
+  )
+
   return (
-    <Card title="수면" mark="var(--blue)" note="어젯밤">
+    <CollapsibleCard title="수면" mark="var(--blue)" filled={filled} summary={summary}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginBottom: 14 }}>
         <button type="button" className="icon-btn" onClick={() => nudge(-0.5)} aria-label="30분 줄이기">
           <span style={{ fontSize: 20, fontWeight: 700, lineHeight: 1 }}>−</span>
@@ -199,7 +389,7 @@ export function SleepSection({ date }: SectionProps) {
           />
         </label>
       </div>
-    </Card>
+    </CollapsibleCard>
   )
 }
 
@@ -212,11 +402,20 @@ export function ConditionSection({ date }: SectionProps) {
   const { getDay, updateDay } = useStore()
   const { condition } = getDay(date)
 
+  const filled = condition.score !== null || condition.reason.trim() !== ''
+  const summary = (
+    <>
+      {condition.score !== null ? `${condition.score} / 5` : '—'}
+      {condition.reason.trim() && <span className="dim"> · {condition.reason}</span>}
+    </>
+  )
+
   return (
-    <Card
+    <CollapsibleCard
       title="컨디션"
       mark={CONDITION_COLOR(condition.score) ?? 'var(--ink-3)'}
-      note="달력 색의 기준"
+      filled={filled}
+      summary={summary}
     >
       <ScaleInput
         value={condition.score}
@@ -237,7 +436,7 @@ export function ConditionSection({ date }: SectionProps) {
           }
         />
       </label>
-    </Card>
+    </CollapsibleCard>
   )
 }
 
@@ -334,8 +533,21 @@ export function WorkoutSection({ date }: SectionProps) {
     setAdding(false)
   }
 
+  const filled = workout.did !== null
+  const summary = (
+    <>
+      {workout.did === null ? '—' : workout.did ? '했음' : '안 함'}
+      {workout.did && (workout.parts.length > 0 || workout.intensity) && (
+        <span className="dim">
+          {workout.parts.length > 0 && ` · ${workout.parts.join(', ')}`}
+          {workout.intensity && ` · ${INTENSITY_LABEL[workout.intensity]}`}
+        </span>
+      )}
+    </>
+  )
+
   return (
-    <Card title="운동" mark="var(--green)">
+    <CollapsibleCard title="운동" mark="var(--green)" filled={filled} summary={summary}>
       <Segmented
         options={[
           { value: 'yes', label: '했음' },
@@ -417,7 +629,7 @@ export function WorkoutSection({ date }: SectionProps) {
           </label>
         </>
       )}
-    </Card>
+    </CollapsibleCard>
   )
 }
 
@@ -428,7 +640,12 @@ export function BodySection({ date }: SectionProps) {
   const day = getDay(date)
 
   return (
-    <Card title="몸무게" mark="var(--purple)">
+    <CollapsibleCard
+      title="몸무게"
+      mark="var(--purple)"
+      filled={day.weight !== null}
+      summary={day.weight !== null ? `${day.weight} kg` : '—'}
+    >
       <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
         <input
           className="input"
@@ -446,7 +663,7 @@ export function BodySection({ date }: SectionProps) {
         />
         <span style={{ fontSize: 16, fontWeight: 700, color: 'var(--ink-3)' }}>kg</span>
       </div>
-    </Card>
+    </CollapsibleCard>
   )
 }
 
@@ -632,8 +849,56 @@ export function PeopleSection({
     setCreating(false)
   }
 
+  // 그날 잡힌 약속을 관계 칸에서 바로 이어받는다.
+  // 약속을 걸어둔 사람과 무슨 일이 있었는지가 결국 여기에 적힐 내용이다.
+  const appointments = day.events.filter(
+    (e) => e.kind === 'appointment' && e.personIds.length > 0,
+  )
+
   return (
     <Card title="관계" mark="var(--purple)">
+      {appointments.length > 0 && !creating && (
+        <div className="stack" style={{ marginBottom: 14 }}>
+          <span className="field-label">오늘 약속</span>
+          {appointments.map((ev) => {
+            const names = ev.personIds
+              .map((id) => personById[id]?.name)
+              .filter(Boolean)
+              .join(', ')
+            const active =
+              ev.personIds.length === selected.length &&
+              ev.personIds.every((id) => selected.includes(id))
+            return (
+              <button
+                key={ev.id}
+                type="button"
+                className="appointment-row"
+                aria-pressed={active}
+                // 토글이 아니라 항상 고른다. '있었던 일 적기'라고 써놓고
+                // 눌렀더니 선택이 풀리면 앞뒤가 맞지 않는다.
+                onClick={() => setSelected(ev.personIds)}
+              >
+                <span className="event-kind" style={{ background: 'var(--purple)' }}>
+                  약속
+                </span>
+                <span style={{ flex: 1, minWidth: 0 }}>
+                  <span className="event-title" style={{ display: 'block' }}>
+                    {ev.title}
+                  </span>
+                  <span className="event-meta">
+                    {ev.time && <span>{ev.time}</span>}
+                    <span>{names}</span>
+                  </span>
+                </span>
+                <span className="appointment-cta">
+                  {active ? '아래에 적기' : '있었던 일 적기'}
+                </span>
+              </button>
+            )
+          })}
+        </div>
+      )}
+
       {creating ? (
         <div className="stack">
           <input
