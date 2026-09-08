@@ -12,11 +12,12 @@ import {
 } from './sections'
 import { SettingsSheet } from './SettingsSheet'
 import { SettingsIcon } from '../../components/icons'
+import { SyncBadge } from '../../components/SyncBadge'
 import { useStore } from '../../lib/store'
 import { formatKorean } from '../../lib/date'
 
 export function TodayScreen({ onOpenPerson }: { onOpenPerson: (id: string) => void }) {
-  const { today } = useStore()
+  const { today, sync } = useStore()
   const [settingsOpen, setSettingsOpen] = useState(false)
 
   return (
@@ -28,14 +29,17 @@ export function TodayScreen({ onOpenPerson }: { onOpenPerson: (id: string) => vo
             <span className="dim">{formatKorean(today)}</span>
           </h1>
         </div>
-        <button
-          type="button"
-          className="icon-btn"
-          onClick={() => setSettingsOpen(true)}
-          aria-label="설정"
-        >
-          <SettingsIcon />
-        </button>
+        <div className="head-actions">
+          <SyncBadge sync={sync} onClick={() => setSettingsOpen(true)} />
+          <button
+            type="button"
+            className="icon-btn"
+            onClick={() => setSettingsOpen(true)}
+            aria-label="설정"
+          >
+            <SettingsIcon />
+          </button>
+        </div>
       </header>
 
       <div className="section-label">사전 관리</div>

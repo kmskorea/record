@@ -2,14 +2,15 @@ import { useRef, useState } from 'react'
 import { Sheet, Switch } from '../../components/ui'
 import { DownloadIcon, UploadIcon } from '../../components/icons'
 import { useStore } from '../../lib/store'
-import { exportJSON, parseImport } from '../../lib/storage'
+import { exportJSON, loadSnapshot, parseImport } from '../../lib/storage'
+import { AccountSection } from './AccountSection'
 import {
   notificationsSupported,
   permission,
   requestPermission,
   sendTestNotification,
 } from '../../lib/notifications'
-import { todayKey } from '../../lib/date'
+import { formatKorean, toKey, todayKey } from '../../lib/date'
 
 export function SettingsSheet({ onClose }: { onClose: () => void }) {
   const { data, setNotifications, replaceAll } = useStore()
@@ -60,8 +61,12 @@ export function SettingsSheet({ onClose }: { onClose: () => void }) {
     }
   }
 
+  const snapshot = loadSnapshot()
+
   return (
     <Sheet title="설정" subtitle={`${dayCount}일 기록 · ${data.people.length}명`} onClose={onClose}>
+      <AccountSection />
+
       <section className="card">
         <header className="card-head">
           <h2 className="card-title">
@@ -148,7 +153,7 @@ export function SettingsSheet({ onClose }: { onClose: () => void }) {
           </h2>
         </header>
         <div className="banner" style={{ marginBottom: 12 }}>
-          기록은 이 브라우저에만 저장됩니다. 다른 기기로 옮기거나 백업하려면 파일로 내보내세요.
+          동기화와 별개로, 파일로 받아두면 어떤 사고에도 기록이 남습니다. 가끔 내보내 두세요.
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
           <button type="button" className="btn ghost" style={{ flex: 1 }} onClick={doExport}>
@@ -174,6 +179,29 @@ export function SettingsSheet({ onClose }: { onClose: () => void }) {
             e.target.value = ''
           }}
         />
+
+        {snapshot && (
+          <>
+            <div className="banner" style={{ marginTop: 12 }}>
+              불러오기 직전 상태가 한 벌 남아 있습니다 ({snapshot.days}일치, {formatKorean(
+                toKey(new Date(snapshot.at)),
+              )}). 잘못 불러왔다면 되돌릴 수 있습니다.
+            </div>
+            <button
+              type="button"
+              className="btn ghost block"
+              style={{ marginTop: 8 }}
+              onClick={() => {
+                if (confirm(`${snapshot.days}일치였던 이전 상태로 되돌립니다. 계속할까요?`)) {
+                  replaceAll(snapshot.data)
+                  setMessage('이전 상태로 되돌렸습니다.')
+                }
+              }}
+            >
+              이전 상태로 되돌리기
+            </button>
+          </>
+        )}
       </section>
 
       {message && <div className="banner">{message}</div>}

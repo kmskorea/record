@@ -1,7 +1,9 @@
-import type { AppData } from './types'
-import { DEFAULT_NOTIFICATIONS } from './types'
+import type { AppData, DayRecord, ISODate, Person } from './types'
+import { DEFAULT_NOTIFICATIONS, emptyDay } from './types'
 
 const KEY = 'record.app.v1'
+const SYNC_KEY = 'record.sync.v1'
+const SNAPSHOT_KEY = 'record.snapshot.v1'
 const VERSION = 1
 
 export function emptyData(): AppData {
@@ -11,6 +13,59 @@ export function emptyData(): AppData {
     people: [],
     notifications: { ...DEFAULT_NOTIFICATIONS, lastFired: {} },
     customWorkoutParts: [],
+    deletedPeople: {},
+    settingsUpdatedAt: 0,
+  }
+}
+
+/**
+ * 저장된 하루 기록을 현재 모델 모양으로 맞춘다.
+ * 나중에 항목을 추가해도 예전 기록에서 그 값이 undefined가 되지 않게 하는 자리다.
+ */
+export function normalizeDay(date: ISODate, raw: unknown): DayRecord {
+  const base = emptyDay(date)
+  if (!raw || typeof raw !== 'object') return base
+  const d = raw as Partial<DayRecord>
+  return {
+    ...base,
+    ...d,
+    date,
+    todos: Array.isArray(d.todos) ? d.todos : base.todos,
+    ideas: Array.isArray(d.ideas) ? d.ideas : base.ideas,
+    interactions: Array.isArray(d.interactions) ? d.interactions : base.interactions,
+    sleep: { ...base.sleep, ...(d.sleep ?? {}) },
+    condition: { ...base.condition, ...(d.condition ?? {}) },
+    workout: {
+      ...base.workout,
+      ...(d.workout ?? {}),
+      parts: Array.isArray(d.workout?.parts) ? d.workout.parts : base.workout.parts,
+    },
+    diet: {
+      ...base.diet,
+      ...(d.diet ?? {}),
+      meals: Array.isArray(d.diet?.meals) ? d.diet.meals : base.diet.meals,
+    },
+    reflection: typeof d.reflection === 'string' ? d.reflection : base.reflection,
+    updatedAt: typeof d.updatedAt === 'number' ? d.updatedAt : base.updatedAt,
+  }
+}
+
+function normalizePerson(raw: unknown): Person | null {
+  if (!raw || typeof raw !== 'object') return null
+  const p = raw as Partial<Person>
+  if (!p.id || typeof p.id !== 'string') return null
+  return {
+    id: p.id,
+    name: typeof p.name === 'string' ? p.name : '',
+    relation: typeof p.relation === 'string' ? p.relation : '',
+    colorIndex: typeof p.colorIndex === 'number' ? p.colorIndex : 0,
+    createdAt: typeof p.createdAt === 'number' ? p.createdAt : Date.now(),
+    updatedAt:
+      typeof p.updatedAt === 'number'
+        ? p.updatedAt
+        : typeof p.createdAt === 'number'
+          ? p.createdAt
+          : Date.now(),
   }
 }
 
@@ -30,12 +85,25 @@ export function migrate(input: unknown): AppData {
   const base = emptyData()
   if (!input || typeof input !== 'object') return base
   const raw = input as Partial<AppData>
+
+  const days: Record<ISODate, DayRecord> = {}
+  if (raw.days && typeof raw.days === 'object') {
+    for (const [date, day] of Object.entries(raw.days)) days[date] = normalizeDay(date, day)
+  }
+
+  const people = Array.isArray(raw.people)
+    ? raw.people.map(normalizePerson).filter((p): p is Person => p !== null)
+    : base.people
+
   return {
     version: VERSION,
-    days: raw.days && typeof raw.days === 'object' ? raw.days : base.days,
-    people: Array.isArray(raw.people) ? raw.people : base.people,
+    days,
+    people,
     notifications: { ...base.notifications, ...(raw.notifications ?? {}) },
     customWorkoutParts: Array.isArray(raw.customWorkoutParts) ? raw.customWorkoutParts : [],
+    deletedPeople:
+      raw.deletedPeople && typeof raw.deletedPeople === 'object' ? raw.deletedPeople : {},
+    settingsUpdatedAt: typeof raw.settingsUpdatedAt === 'number' ? raw.settingsUpdatedAt : 0,
   }
 }
 
@@ -53,6 +121,68 @@ export function flush(data: AppData) {
   } catch (err) {
     console.error('기록을 저장하지 못했습니다', err)
     alert('저장 공간이 부족해 기록을 저장하지 못했습니다. 설정에서 백업 후 정리해 주세요.')
+  }
+}
+
+// ─── 동기화 상태 ──────────────────────────────────────────────────────────────
+
+export interface SyncState {
+  /** 아직 서버에 올리지 못한 날짜/사람. 앱이 꺼졌다 켜져도 남아야 하므로 따로 저장한다. */
+  dirtyDays: Record<ISODate, true>
+  dirtyPeople: Record<string, true>
+  settingsDirty: boolean
+  /** 증분 조회 커서 (서버 시각) */
+  cursor: string | null
+  lastSyncedAt: number | null
+}
+
+export function emptySyncState(): SyncState {
+  return { dirtyDays: {}, dirtyPeople: {}, settingsDirty: false, cursor: null, lastSyncedAt: null }
+}
+
+export function loadSyncState(): SyncState {
+  try {
+    const raw = localStorage.getItem(SYNC_KEY)
+    if (!raw) return emptySyncState()
+    return { ...emptySyncState(), ...(JSON.parse(raw) as Partial<SyncState>) }
+  } catch {
+    return emptySyncState()
+  }
+}
+
+export function saveSyncState(state: SyncState) {
+  try {
+    localStorage.setItem(SYNC_KEY, JSON.stringify(state))
+  } catch (err) {
+    console.error('동기화 상태를 저장하지 못했습니다', err)
+  }
+}
+
+// ─── 되돌리기용 스냅샷 ────────────────────────────────────────────────────────
+
+/**
+ * 기록을 통째로 갈아엎기 직전(불러오기 등)의 상태를 한 벌 보관한다.
+ * 실수로 남의 백업을 불러왔을 때 되돌아갈 곳이 있어야 한다.
+ */
+export function saveSnapshot(data: AppData) {
+  try {
+    localStorage.setItem(
+      SNAPSHOT_KEY,
+      JSON.stringify({ at: Date.now(), days: Object.keys(data.days).length, data }),
+    )
+  } catch (err) {
+    console.warn('스냅샷을 남기지 못했습니다', err)
+  }
+}
+
+export function loadSnapshot(): { at: number; days: number; data: AppData } | null {
+  try {
+    const raw = localStorage.getItem(SNAPSHOT_KEY)
+    if (!raw) return null
+    const parsed = JSON.parse(raw)
+    return { at: parsed.at, days: parsed.days, data: migrate(parsed.data) }
+  } catch {
+    return null
   }
 }
 
