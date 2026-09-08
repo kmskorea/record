@@ -29,6 +29,8 @@ export interface Person {
   /** 프로필 색상 인덱스 (PERSON_COLORS 참조) */
   colorIndex: number
   createdAt: number
+  /** 기기 간 최신본 판정 기준 */
+  updatedAt: number
 }
 
 /** 특정 날짜에 특정 인물과 있었던 일. */
@@ -108,6 +110,13 @@ export interface AppData {
   notifications: NotificationSettings
   /** 사용자가 직접 추가한 운동 부위 */
   customWorkoutParts: string[]
+  /**
+   * 지운 사람의 묘비. 줄을 그냥 없애면 다른 기기가 되살려 놓기 때문에
+   * '지웠다'는 사실 자체를 기록해서 같이 퍼뜨려야 한다.
+   */
+  deletedPeople: Record<string, number>
+  /** 알림 시각·운동 부위 같은 설정의 최종 수정 시각 */
+  settingsUpdatedAt: number
 }
 
 export const WORKOUT_PARTS = ['가슴', '등', '어깨', '팔', '코어', '하체', '유산소'] as const

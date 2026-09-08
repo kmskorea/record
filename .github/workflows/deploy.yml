@@ -28,6 +28,10 @@ jobs:
       - run: npm run build
         env:
           BASE_PATH: /${{ github.event.repository.name }}/
+          # 저장소 Settings → Secrets and variables → Actions 에 넣어둔 값.
+          # 비어 있어도 빌드는 되고, 그때는 앱 안에서 직접 입력받는다.
+          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
       # Pages가 아직 꺼져 있으면 워크플로가 직접 켠다
       - uses: actions/configure-pages@v5
         with:
