@@ -68,6 +68,7 @@ export function DayClock({
   const painting = useRef<{ value: string | null; last: number; map: Map<number, string | null> } | null>(
     null,
   )
+  const usedPointer = useRef(false)
 
   const valueAt = (i: number) => (draft?.has(i) ? draft.get(i)! : slots[i])
 
@@ -95,11 +96,27 @@ export function DayClock({
     setDraft(null)
   }
 
+  /**
+   * 화면 좌표를 SVG 자기 좌표계로 옮긴다.
+   * 화면 크기로 직접 계산하면, 브라우저가 SVG 높이를 제대로 안 잡아
+   * 그림이 상자 안에서 여백을 두고 축소될 때(사파리에서 종종 그렇다)
+   * 손끝과 실제 칸이 어긋나 아무 데도 안 눌린다. 변환 행렬을 쓰면
+   * 확대·여백·변형이 어떻든 정확히 맞는다.
+   */
   const indexFromPoint = (clientX: number, clientY: number, svg: SVGSVGElement): number | null => {
-    const rect = svg.getBoundingClientRect()
-    const scale = SIZE / rect.width
-    const x = (clientX - rect.left) * scale - CENTER
-    const y = (clientY - rect.top) * scale - CENTER
+    const ctm = svg.getScreenCTM()
+    if (!ctm) return null
+    let local: { x: number; y: number }
+    try {
+      local = new DOMPoint(clientX, clientY).matrixTransform(ctm.inverse())
+    } catch {
+      const p = svg.createSVGPoint()
+      p.x = clientX
+      p.y = clientY
+      local = p.matrixTransform(ctm.inverse())
+    }
+    const x = local.x - CENTER
+    const y = local.y - CENTER
     const dist = Math.hypot(x, y)
     if (dist < INNER - TOLERANCE || dist > OUTER + TOLERANCE) return null
     let angle = Math.atan2(y, x) + Math.PI / 2
@@ -117,10 +134,17 @@ export function DayClock({
         role="group"
         aria-label="하루 시간표"
         onPointerDown={(e) => {
+          usedPointer.current = true
           const i = indexFromPoint(e.clientX, e.clientY, e.currentTarget)
           if (i === null) return
-          e.currentTarget.setPointerCapture(e.pointerId)
           begin(i)
+          // 캡처는 있으면 좋고 없어도 그만이다. 여기서 예외가 나서
+          // 칠하기 자체가 시작도 못 하는 일이 없도록 뒤에 두고 감싼다.
+          try {
+            e.currentTarget.setPointerCapture(e.pointerId)
+          } catch {
+            /* 지원하지 않는 브라우저면 그냥 진행한다 */
+          }
         }}
         onPointerMove={(e) => {
           if (!painting.current) return
@@ -129,6 +153,24 @@ export function DayClock({
         }}
         onPointerUp={finish}
         onPointerCancel={finish}
+        onLostPointerCapture={finish}
+        // 포인터 이벤트가 아예 안 오는 환경을 위한 대비책.
+        // 포인터가 한 번이라도 왔으면 이쪽은 건너뛴다.
+        onTouchStart={(e) => {
+          if (usedPointer.current) return
+          const t = e.touches[0]
+          const i = indexFromPoint(t.clientX, t.clientY, e.currentTarget)
+          if (i !== null) begin(i)
+        }}
+        onTouchMove={(e) => {
+          if (usedPointer.current || !painting.current) return
+          const t = e.touches[0]
+          const i = indexFromPoint(t.clientX, t.clientY, e.currentTarget)
+          if (i !== null) extend(i)
+        }}
+        onTouchEnd={() => {
+          if (!usedPointer.current) finish()
+        }}
       >
         {SECTORS.map((d, i) => {
           const color = colorOf(valueAt(i))

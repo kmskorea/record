@@ -1590,14 +1590,28 @@ input[type='number'] {
   display: flex;
   justify-content: center;
   padding: 4px 0 10px;
+  /* 사파리는 SVG 요소에 걸린 touch-action을 무시하는 경우가 있다.
+     그러면 첫 손가락 이동에서 페이지 스크롤이 가로채 가고 브라우저가
+     포인터를 취소해버려서, 문지르기가 시작하자마자 끊긴다.
+     확실히 먹는 바깥 div에도 같이 걸어둔다. */
+  touch-action: none;
+  -webkit-user-select: none;
+  user-select: none;
 }
 
 .clock {
   width: 100%;
   max-width: 290px;
   height: auto;
+  /* 사파리는 viewBox만으로 높이를 못 잡는 경우가 있다. 비율을 못박아
+     그림이 상자 안에서 여백을 두고 축소되는 것을 막는다. */
+  aspect-ratio: 1 / 1;
   touch-action: none;
   cursor: pointer;
+  /* 길게 누를 때 뜨는 복사·저장 메뉴와 텍스트 선택을 막는다 */
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
 }
 
 .clock path {

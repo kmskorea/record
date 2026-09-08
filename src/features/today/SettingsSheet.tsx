@@ -205,6 +205,10 @@ export function SettingsSheet({ onClose }: { onClose: () => void }) {
       </section>
 
       {message && <div className="banner">{message}</div>}
+
+      <p className="card-note" style={{ textAlign: 'center', paddingBottom: 4 }}>
+        빌드 {__BUILD_ID__} (UTC)
+      </p>
     </Sheet>
   )
 }
