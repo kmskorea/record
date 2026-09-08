@@ -6,6 +6,7 @@ import {
   IdeaSection,
   PeopleSection,
   ReflectionSection,
+  ScoreSection,
   SleepSection,
   TodoSection,
   WorkoutSection,
@@ -60,6 +61,9 @@ export function TodayScreen({ onOpenPerson }: { onOpenPerson: (id: string) => vo
         <PeopleSection date={today} onOpenPerson={onOpenPerson} />
         <ReflectionSection date={today} />
       </div>
+
+      <div className="section-label">하루 마무리</div>
+      <ScoreSection date={today} />
 
       {settingsOpen && <SettingsSheet onClose={() => setSettingsOpen(false)} />}
     </div>

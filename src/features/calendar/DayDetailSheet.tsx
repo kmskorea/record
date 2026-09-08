@@ -7,16 +7,15 @@ import {
   IdeaSection,
   PeopleSection,
   ReflectionSection,
+  ScoreSection,
   SleepSection,
   TodoSection,
   WorkoutSection,
 } from '../today/sections'
 import { formatKorean, formatRelative } from '../../lib/date'
-import { SCORE_COLOR, SCORE_LABEL, dayScore, hasContent } from '../../lib/metrics'
+import { dayScore, hasContent, scoreStep } from '../../lib/metrics'
 import { useStore } from '../../lib/store'
 import type { ISODate } from '../../lib/types'
-
-const CHIP_INK: Record<string, string> = { good: '#fff', ok: '#17150f', bad: '#fff' }
 
 export function DayDetailSheet({
   date,
@@ -30,6 +29,7 @@ export function DayDetailSheet({
   const { getDay } = useStore()
   const day = getDay(date)
   const score = dayScore(day)
+  const step = score === null ? null : scoreStep(score)
   const [expanded, setExpanded] = useState(false)
   const empty = !hasContent(day)
 
@@ -39,18 +39,19 @@ export function DayDetailSheet({
       subtitle={formatRelative(date)}
       onClose={onClose}
       headExtra={
-        score && (
+        step && (
           <span
             style={{
-              background: SCORE_COLOR[score],
-              color: CHIP_INK[score],
+              background: step.bg,
+              color: step.ink,
+              border: '1px solid var(--line-strong)',
               borderRadius: 'var(--r-pill)',
               padding: '5px 12px',
               fontSize: 12,
-              fontWeight: 750,
+              fontWeight: 800,
             }}
           >
-            {SCORE_LABEL[score]}
+            {score?.toFixed(1)}점
           </span>
         )
       }
@@ -64,6 +65,7 @@ export function DayDetailSheet({
         </>
       ) : (
         <>
+          <ScoreSection date={date} />
           <TodoSection date={date} />
           <SleepSection date={date} />
           <ConditionSection date={date} />

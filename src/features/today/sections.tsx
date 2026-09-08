@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react'
 import { Card, Checkbox, Chip, Empty, ScaleInput, Segmented, initial } from '../../components/ui'
+import { StarRating } from '../../components/StarRating'
 import { BulbIcon, PlusIcon, TrashIcon } from '../../components/icons'
 import { useStore } from '../../lib/store'
 import { newId } from '../../lib/storage'
@@ -463,13 +464,11 @@ export function DietSection({ date }: SectionProps) {
     }))
 
   const usedLabels = new Set(diet.meals.map((m) => m.label))
-  const nutrients: { key: 'protein' | 'water' | 'creatine' | 'sugar'; label: string; color: string }[] =
-    [
-      { key: 'protein', label: '단백질', color: 'var(--accent)' },
-      { key: 'water', label: '수분', color: 'var(--blue)' },
-      { key: 'creatine', label: '크레아틴', color: 'var(--green)' },
-      { key: 'sugar', label: '당분', color: 'var(--yellow)' },
-    ]
+  const nutrients: { key: 'protein' | 'water' | 'sugar'; label: string; color: string }[] = [
+    { key: 'protein', label: '단백질', color: 'var(--accent)' },
+    { key: 'water', label: '수분', color: 'var(--blue)' },
+    { key: 'sugar', label: '당분', color: 'var(--yellow)' },
+  ]
 
   return (
     <Card title="식습관" mark="var(--yellow)" note={`${diet.meals.length}끼`}>
@@ -544,6 +543,22 @@ export function DietSection({ date }: SectionProps) {
             />
           </div>
         ))}
+
+        <div className="field">
+          <span className="field-label">크레아틴</span>
+          <Segmented
+            options={[
+              { value: 'yes', label: 'O 먹음' },
+              { value: 'no', label: 'X 안 먹음' },
+            ]}
+            value={diet.creatine === null ? null : diet.creatine ? 'yes' : 'no'}
+            onChange={(v) =>
+              updateDay(date, (d) => ({
+                diet: { ...d.diet, creatine: v === null ? null : v === 'yes' },
+              }))
+            }
+          />
+        </div>
       </div>
     </Card>
   )
@@ -557,7 +572,7 @@ export function PeopleSection({
 }: SectionProps & { onOpenPerson?: (id: string) => void }) {
   const { getDay, updateDay, data, addPerson } = useStore()
   const day = getDay(date)
-  const [selected, setSelected] = useState<string | null>(null)
+  const [selected, setSelected] = useState<string[]>([])
   const [note, setNote] = useState('')
   const [creating, setCreating] = useState(false)
   const [name, setName] = useState('')
@@ -568,22 +583,29 @@ export function PeopleSection({
     [data.people],
   )
 
+  const toggle = (id: string) =>
+    setSelected((prev) => (prev.includes(id) ? prev.filter((p) => p !== id) : [...prev, id]))
+
   const submitNote = () => {
     const text = note.trim()
-    if (!selected || !text) return
+    if (selected.length === 0 || !text) return
+    const at = Date.now()
+    // 함께 있었던 일은 고른 사람 각각에게 같은 내용으로 남긴다.
+    // 나중에 사람별 프로필에서 따로 열어봐야 하기 때문이다.
     updateDay(date, (d) => ({
       interactions: [
-        { id: newId(), personId: selected, note: text, at: Date.now() },
+        ...selected.map((personId) => ({ id: newId(), personId, note: text, at })),
         ...d.interactions,
       ],
     }))
     setNote('')
+    setSelected([])
   }
 
   const createPerson = () => {
     if (!name.trim()) return
     const person = addPerson(name, relation)
-    setSelected(person.id)
+    setSelected((prev) => [...prev, person.id])
     setName('')
     setRelation('')
     setCreating(false)
@@ -621,20 +643,19 @@ export function PeopleSection({
       ) : (
         <div className="person-scroll">
           {data.people.map((p) => {
-            const active = selected === p.id
+            const active = selected.includes(p.id)
             return (
               <button
                 key={p.id}
                 type="button"
                 className="person-pill"
-                onClick={() => setSelected(active ? null : p.id)}
+                aria-pressed={active}
+                onClick={() => toggle(p.id)}
               >
                 <span
                   className="avatar"
-                  style={{
-                    background: PERSON_COLORS[p.colorIndex % PERSON_COLORS.length],
-                    boxShadow: active ? '0 0 0 2.5px var(--ink)' : 'none',
-                  }}
+                  data-selected={active}
+                  style={{ background: PERSON_COLORS[p.colorIndex % PERSON_COLORS.length] }}
                 >
                   {initial(p.name)}
                 </span>
@@ -662,12 +683,15 @@ export function PeopleSection({
         </div>
       )}
 
-      {selected && !creating && (
+      {selected.length > 0 && !creating && (
         <div style={{ marginTop: 12 }}>
           <textarea
             className="textarea"
             style={{ minHeight: 76 }}
-            placeholder={`${personById[selected]?.name ?? ''}와(과) 오늘 있었던 일`}
+            placeholder={`${selected
+              .map((id) => personById[id]?.name)
+              .filter(Boolean)
+              .join(', ')}와(과) 오늘 있었던 일`}
             value={note}
             onChange={(e) => setNote(e.target.value)}
           />
@@ -678,7 +702,7 @@ export function PeopleSection({
             onClick={submitNote}
             disabled={!note.trim()}
           >
-            기록
+            {selected.length > 1 ? `${selected.length}명에게 기록` : '기록'}
           </button>
         </div>
       )}
@@ -755,6 +779,31 @@ export function ReflectionSection({ date }: SectionProps) {
         value={day.reflection}
         onChange={(e) => updateDay(date, () => ({ reflection: e.target.value }))}
       />
+    </Card>
+  )
+}
+
+// ── 하루 점수 ────────────────────────────────────────────────────────────────
+
+export function ScoreSection({ date }: SectionProps) {
+  const { getDay, updateDay } = useStore()
+  const day = getDay(date)
+
+  return (
+    <Card title="오늘 몇 점?" mark="var(--blue)" note="달력 색의 기준">
+      <StarRating
+        value={day.score}
+        onChange={(v) => updateDay(date, () => ({ score: v }))}
+      />
+      <label className="field" style={{ marginTop: 14 }}>
+        <span className="field-label">한 줄 평</span>
+        <input
+          className="input"
+          placeholder="오늘을 한 문장으로 남긴다면"
+          value={day.scoreNote}
+          onChange={(e) => updateDay(date, () => ({ scoreNote: e.target.value }))}
+        />
+      </label>
     </Card>
   )
 }

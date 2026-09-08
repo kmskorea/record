@@ -9,15 +9,9 @@ import {
   monthGrid,
   todayKey,
 } from '../../lib/date'
-import { SCORE_COLOR, SCORE_LABEL, dayScore, hasContent } from '../../lib/metrics'
+import { dayScore, hasContent, scoreStep } from '../../lib/metrics'
+import { ScoreScaleLegend } from '../../components/StarRating'
 import type { DayRecord, ISODate } from '../../lib/types'
-
-/** 파랑/빨강 칸 위에는 흰 글씨, 노랑 칸 위에는 검은 글씨가 읽기 좋다. */
-const CELL_INK: Record<string, string> = {
-  good: '#ffffff',
-  ok: '#17150f',
-  bad: '#ffffff',
-}
 
 interface Props {
   anchor: ISODate
@@ -31,15 +25,20 @@ export function CalendarWidget({ anchor, selected, days, onSelect, onAnchorChang
   const grid = useMemo(() => monthGrid(anchor), [anchor])
   const today = todayKey()
 
-  const counts = useMemo(() => {
-    const c = { good: 0, ok: 0, bad: 0, none: 0 }
+  const summary = useMemo(() => {
+    let scored = 0
+    let none = 0
+    let total = 0
     for (const key of grid) {
       if (!isSameMonth(key, anchor)) continue
       const score = dayScore(days[key])
-      if (score) c[score]++
-      else c.none++
+      if (score === null) none++
+      else {
+        scored++
+        total += score
+      }
     }
-    return c
+    return { scored, none, avg: scored ? total / scored : null }
   }, [grid, anchor, days])
 
   return (
@@ -83,6 +82,7 @@ export function CalendarWidget({ anchor, selected, days, onSelect, onAnchorChang
         {grid.map((key) => {
           const day = days[key]
           const score = dayScore(day)
+          const step = score === null ? null : scoreStep(score)
           const outside = !isSameMonth(key, anchor)
           return (
             <button
@@ -92,45 +92,40 @@ export function CalendarWidget({ anchor, selected, days, onSelect, onAnchorChang
               data-outside={outside}
               data-today={key === today}
               data-selected={key === selected}
-              data-scored={score !== null}
+              data-scored={step !== null}
               style={
-                score
-                  ? ({
-                      '--cell-color': SCORE_COLOR[score],
-                      '--cell-ink': CELL_INK[score],
-                    } as React.CSSProperties)
+                step
+                  ? ({ '--cell-color': step.bg, '--cell-ink': step.ink } as React.CSSProperties)
                   : undefined
               }
-              aria-label={`${key}${score ? ` · ${SCORE_LABEL[score]}` : ''}`}
+              aria-label={`${key}${score !== null ? ` · ${score}점` : ''}`}
               onClick={() => {
                 onSelect(key)
                 if (outside) onAnchorChange(key)
               }}
             >
               {Number(key.slice(8))}
-              {!score && hasContent(day) && <i className="dot" />}
+              {step === null && hasContent(day) && <i className="dot" />}
             </button>
           )
         })}
       </div>
 
       <div className="cal-legend">
-        <span>
-          <i style={{ background: SCORE_COLOR.good }} />
-          좋음 {counts.good}
-        </span>
-        <span>
-          <i style={{ background: SCORE_COLOR.ok }} />
-          보통 {counts.ok}
-        </span>
-        <span>
-          <i style={{ background: SCORE_COLOR.bad }} />
-          별로 {counts.bad}
+        <span style={{ gap: 7 }}>
+          0
+          <ScoreScaleLegend />5
         </span>
         <span>
           <i style={{ background: 'var(--surface-3)' }} />
-          기록 없음 {counts.none}
+          기록 없음 {summary.none}
         </span>
+        {summary.avg !== null && (
+          <span>
+            이 달 평균 <strong style={{ color: 'var(--ink)' }}>{summary.avg.toFixed(1)}</strong>점 ·{' '}
+            {summary.scored}일
+          </span>
+        )}
       </div>
     </Card>
   )
