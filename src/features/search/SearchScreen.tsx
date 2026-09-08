@@ -14,6 +14,7 @@ const KIND_COLOR: Record<string, string> = {
   식사: 'var(--yellow)',
   관계: 'var(--purple)',
   일기: 'var(--ink-2)',
+  '한 줄 평': 'var(--blue)',
 }
 
 export function SearchScreen({

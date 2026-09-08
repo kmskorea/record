@@ -2,6 +2,7 @@ import type { DayRecord, ISODate } from './types'
 import { weekday } from './date'
 
 export type MetricId =
+  | 'score'
   | 'sleep'
   | 'condition'
   | 'workout'
@@ -11,7 +12,6 @@ export type MetricId =
   | 'water'
   | 'creatine'
   | 'sugar'
-  | 'todo'
 
 export interface MetricDef {
   id: MetricId
@@ -28,6 +28,16 @@ export interface MetricDef {
 const round1 = (v: number) => (Math.round(v * 10) / 10).toString()
 
 export const METRICS: MetricDef[] = [
+  {
+    id: 'score',
+    label: '하루 점수',
+    short: '점수',
+    color: '#1B3FD8',
+    unit: '',
+    domain: [0, 5],
+    get: (d) => d.score,
+    format: (v) => `${round1(v)} / 5`,
+  },
   {
     id: 'sleep',
     label: '수면시간',
@@ -111,9 +121,9 @@ export const METRICS: MetricDef[] = [
     short: '크레아틴',
     color: '#7A9E3F',
     unit: '',
-    domain: [1, 5],
-    get: (d) => d.diet.creatine,
-    format: (v) => `${round1(v)} / 5`,
+    domain: [0, 1],
+    get: (d) => (d.diet.creatine === null ? null : d.diet.creatine ? 1 : 0),
+    format: (v) => (v >= 0.5 ? 'O (먹음)' : 'X (안 먹음)'),
   },
   {
     id: 'sugar',
@@ -125,17 +135,6 @@ export const METRICS: MetricDef[] = [
     get: (d) => d.diet.sugar,
     format: (v) => `${round1(v)} / 5`,
   },
-  {
-    id: 'todo',
-    label: '할일 완수율',
-    short: '할일',
-    color: '#5B6670',
-    unit: '%',
-    domain: [0, 100],
-    get: (d) =>
-      d.todos.length === 0 ? null : (d.todos.filter((t) => t.done).length / d.todos.length) * 100,
-    format: (v) => `${Math.round(v)}%`,
-  },
 ]
 
 export const METRIC_BY_ID = Object.fromEntries(METRICS.map((m) => [m.id, m])) as Record<
@@ -145,30 +144,69 @@ export const METRIC_BY_ID = Object.fromEntries(METRICS.map((m) => [m.id, m])) as
 
 // ─── 하루 점수 ────────────────────────────────────────────────────────────────
 
-export type DayScore = 'good' | 'ok' | 'bad'
+export interface ScoreStep {
+  value: number
+  bg: string
+  /** 그 배경 위에서 읽히는 글자색 */
+  ink: string
+  label: string
+}
 
-export const SCORE_COLOR: Record<DayScore, string> = {
+/**
+ * 0~5점을 0.5 단위로 색에 대응시킨다.
+ * 가운데(2.5)를 흰색으로 두고 위로는 파랑이 진해지고 아래로는 빨강이 진해진다.
+ * 0점만 따로 검은색이라, 아무것도 안 된 날이 한눈에 드러난다.
+ */
+export const SCORE_STEPS: ScoreStep[] = [
+  { value: 0, bg: '#17150F', ink: '#FFFFFF', label: '최악' },
+  { value: 0.5, bg: '#B3200B', ink: '#FFFFFF', label: '' },
+  { value: 1, bg: '#E4572E', ink: '#FFFFFF', label: '' },
+  { value: 1.5, bg: '#F0937A', ink: '#17150F', label: '' },
+  { value: 2, bg: '#F8CBBD', ink: '#17150F', label: '' },
+  { value: 2.5, bg: '#FFFFFF', ink: '#17150F', label: '보통' },
+  { value: 3, bg: '#D3DAFF', ink: '#17150F', label: '' },
+  { value: 3.5, bg: '#A8B6FF', ink: '#17150F', label: '' },
+  { value: 4, bg: '#7C90FF', ink: '#FFFFFF', label: '' },
+  { value: 4.5, bg: '#3D5AFE', ink: '#FFFFFF', label: '' },
+  { value: 5, bg: '#1B2DA8', ink: '#FFFFFF', label: '최고' },
+]
+
+const STEP_BY_VALUE = new Map(SCORE_STEPS.map((s) => [s.value, s]))
+
+/** 가장 가까운 0.5 눈금의 색을 돌려준다. */
+export function scoreStep(score: number): ScoreStep {
+  const clamped = Math.max(0, Math.min(5, score))
+  const snapped = Math.round(clamped * 2) / 2
+  return STEP_BY_VALUE.get(snapped) ?? SCORE_STEPS[5]
+}
+
+/** 통계에서 쓰는 굵은 구간. */
+export type ScoreBand = 'good' | 'ok' | 'bad'
+
+export const BAND_COLOR: Record<ScoreBand, string> = {
   good: '#3D5AFE',
-  ok: '#E8B93B',
+  ok: '#C9CBD6',
   bad: '#E4572E',
 }
 
-export const SCORE_LABEL: Record<DayScore, string> = {
+export const BAND_LABEL: Record<ScoreBand, string> = {
   good: '좋음',
   ok: '보통',
   bad: '별로',
 }
 
-/** 달력 색을 결정하는 하루 점수. 컨디션 기록이 기준이다. */
-export function dayScore(day: DayRecord | undefined): DayScore | null {
-  const s = day?.condition.score
-  if (!s) return null
-  if (s >= 4) return 'good'
-  if (s === 3) return 'ok'
+export function scoreBand(score: number): ScoreBand {
+  if (score >= 3.5) return 'good'
+  if (score >= 2) return 'ok'
   return 'bad'
 }
 
-/** 컨디션 말고도 뭐라도 적혀 있으면 '기록한 날'로 본다. */
+/** 달력 색을 결정하는 하루 점수. 오늘 화면 맨 아래에서 직접 매긴 별점이다. */
+export function dayScore(day: DayRecord | undefined): number | null {
+  return day?.score ?? null
+}
+
+/** 점수 말고도 뭐라도 적혀 있으면 '기록한 날'로 본다. */
 export function hasContent(day: DayRecord | undefined): boolean {
   if (!day) return false
   return (
@@ -176,6 +214,8 @@ export function hasContent(day: DayRecord | undefined): boolean {
     day.ideas.length > 0 ||
     day.interactions.length > 0 ||
     day.reflection.trim() !== '' ||
+    day.score !== null ||
+    day.scoreNote.trim() !== '' ||
     day.condition.score !== null ||
     day.condition.reason.trim() !== '' ||
     day.sleep.hours !== null ||
@@ -187,6 +227,12 @@ export function hasContent(day: DayRecord | undefined): boolean {
     day.diet.creatine !== null ||
     day.diet.sugar !== null
   )
+}
+
+/** 할일 완수율. 트래킹 그래프에서는 뺐지만 인사이트에서는 쓴다. */
+export function todoRate(day: DayRecord | undefined): number | null {
+  if (!day || day.todos.length === 0) return null
+  return (day.todos.filter((t) => t.done).length / day.todos.length) * 100
 }
 
 // ─── 통계 ────────────────────────────────────────────────────────────────────

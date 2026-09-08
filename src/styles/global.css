@@ -673,6 +673,15 @@ ul {
   font-size: 21px;
 }
 
+.avatar[data-selected='true'] {
+  box-shadow: 0 0 0 2.5px var(--bg), 0 0 0 5px var(--ink);
+}
+
+.person-pill[aria-pressed='true'] .name {
+  color: var(--ink);
+  font-weight: 750;
+}
+
 .person-row {
   display: flex;
   align-items: center;
@@ -705,7 +714,9 @@ ul {
   display: flex;
   gap: 9px;
   overflow-x: auto;
-  padding-bottom: 4px;
+  /* 선택 시 아바타에 두르는 테두리가 스크롤 영역에 잘리지 않도록 사방에 여유를 둔다 */
+  padding: 4px 2px 6px;
+  margin: -4px -2px -6px;
   scrollbar-width: none;
 }
 
@@ -797,6 +808,8 @@ ul {
   background: var(--cell-color);
   color: var(--cell-ink);
   font-weight: 750;
+  /* 2.5점(흰색) 칸이 카드 배경에 묻히지 않도록 옅은 테두리를 항상 둔다 */
+  border: 1px solid rgba(23, 21, 15, 0.12);
 }
 
 .cal-cell[data-today='true'] {
@@ -1403,4 +1416,167 @@ ul {
   align-items: center;
   gap: 8px;
   flex-shrink: 0;
+}
+
+/* ── 하루 점수 별점 ───────────────────────────────────────────────────────── */
+.rating-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.zero-btn {
+  width: 30px;
+  height: 30px;
+  border-radius: 9px;
+  background: var(--surface-2);
+  color: var(--ink-3);
+  font-size: 13px;
+  font-weight: 800;
+  flex-shrink: 0;
+  transition: all 0.15s ease;
+}
+
+.zero-btn[aria-pressed='true'] {
+  background: var(--ink);
+  color: var(--bg);
+}
+
+.stars {
+  display: flex;
+  gap: 2px;
+  flex: 1;
+  min-width: 0;
+}
+
+.star {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  aspect-ratio: 1;
+  max-width: 44px;
+  display: block;
+}
+
+.star svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+.star-bg {
+  fill: var(--surface-3);
+}
+
+.star-fill {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+/* 잘린 채로도 별 모양이 유지되도록 안쪽 svg는 원래 폭을 지킨다 */
+.star-fill svg {
+  width: auto;
+  height: 100%;
+  max-width: none;
+  fill: var(--star);
+}
+
+.star-hit {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 50%;
+  z-index: 1;
+}
+
+.star-hit.left {
+  left: 0;
+}
+
+.star-hit.right {
+  right: 0;
+}
+
+.rating {
+  --star: #e8b93b;
+}
+
+.rating-value {
+  min-width: 52px;
+  height: 34px;
+  padding: 0 10px;
+  border-radius: var(--r-pill);
+  border: 1.5px solid transparent;
+  background: var(--surface-2);
+  color: var(--ink-3);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 15px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+  flex-shrink: 0;
+}
+
+.rating-legend {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: 8px;
+  min-height: 18px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ink-3);
+}
+
+.link-btn {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--ink-3);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+/* 달력 범례의 0~5 색 띠 */
+.scale-strip {
+  display: flex;
+  height: 12px;
+  border-radius: 4px;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  flex: 1;
+  min-width: 90px;
+  max-width: 190px;
+}
+
+.scale-strip i {
+  flex: 1;
+  display: block;
+}
+
+/* ── 모바일에서 시간 입력칸이 넘치지 않게 ─────────────────────────────────── */
+.field {
+  min-width: 0;
+}
+
+input[type='time'],
+input[type='date'],
+input[type='number'] {
+  /* iOS는 이 입력칸들에 자체 최소 너비를 줘서 그리드 밖으로 밀어낸다 */
+  min-width: 0;
+  max-width: 100%;
+  width: 100%;
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+.input[type='time'] {
+  padding-left: 10px;
+  padding-right: 10px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
 }

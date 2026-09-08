@@ -1,6 +1,6 @@
 import type { DayRecord, ISODate, Person } from './types'
 
-export type HitKind = '할일' | '아이디어' | '컨디션' | '운동' | '식사' | '관계' | '일기'
+export type HitKind = '할일' | '아이디어' | '컨디션' | '운동' | '식사' | '관계' | '일기' | '한 줄 평'
 
 export interface SearchHit {
   id: string
@@ -51,6 +51,7 @@ export function searchAll(
       }
     }
     if (day.reflection) push('일기', day.reflection, `${day.date}-reflection`)
+    if (day.scoreNote) push('한 줄 평', day.scoreNote, `${day.date}-scorenote`)
   }
 
   return hits.sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0))

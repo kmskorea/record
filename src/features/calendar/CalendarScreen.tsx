@@ -11,7 +11,7 @@ export function CalendarScreen({ onOpenPerson }: { onOpenPerson: (id: string) =>
   const { data, today } = useStore()
   const [anchor, setAnchor] = useState<ISODate>(today)
   const [selected, setSelected] = useState<ISODate | null>(null)
-  const [metrics, setMetrics] = useState<MetricId[]>(['condition', 'sleep'])
+  const [metrics, setMetrics] = useState<MetricId[]>(['score', 'sleep'])
 
   const toggleMetric = (id: MetricId) =>
     setMetrics((prev) => (prev.includes(id) ? prev.filter((m) => m !== id) : [...prev, id]))

@@ -2,19 +2,25 @@ import { useMemo } from 'react'
 import { Card, Empty, initial } from '../../components/ui'
 import { WEEKDAYS, rangeEndingAt } from '../../lib/date'
 import {
+  BAND_COLOR,
+  BAND_LABEL,
   METRIC_BY_ID,
-  SCORE_COLOR,
   buildSeries,
   correlationLabel,
   dayScore,
   findDiscoveries,
   hasContent,
   recordStreak,
+  scoreBand,
+  todoRate,
   weekdayAverages,
 } from '../../lib/metrics'
 import { PERSON_COLORS, type DayRecord, type ISODate } from '../../lib/types'
 
 const WINDOW = 30
+
+/** 요일별 컨디션 막대는 1~5 척도라 하루 점수 색과 별개로 쓴다. */
+const CONDITION_BAR = { good: '#3D5AFE', ok: '#E8B93B', bad: '#E4572E' }
 
 function avg(values: (number | null)[]): number | null {
   const nums = values.filter((v): v is number => v !== null)
@@ -38,7 +44,8 @@ export function InsightsPanel({
   const stats = useMemo(() => {
     const conditionSeries = buildSeries(METRIC_BY_ID.condition, dates, days)
     const sleepSeries = buildSeries(METRIC_BY_ID.sleep, dates, days)
-    const todoSeries = buildSeries(METRIC_BY_ID.todo, dates, days)
+    const todoValues = dates.map((d) => todoRate(days[d]))
+    const scoreValues = dates.map((d) => dayScore(days[d]))
 
     const dist = { good: 0, ok: 0, bad: 0 }
     let recorded = 0
@@ -48,16 +55,17 @@ export function InsightsPanel({
       if (hasContent(day)) recorded++
       if (day?.workout.did) workoutDays++
       const s = dayScore(day)
-      if (s) dist[s]++
+      if (s !== null) dist[scoreBand(s)]++
     }
 
     return {
       streak: recordStreak(days, today),
       recorded,
       workoutDays,
+      avgScore: avg(scoreValues),
       avgCondition: avg(conditionSeries.map((p) => p.value)),
       avgSleep: avg(sleepSeries.map((p) => p.value)),
-      avgTodo: avg(todoSeries.map((p) => p.value)),
+      avgTodo: avg(todoValues),
       dist,
       weekday: weekdayAverages(conditionSeries),
     }
@@ -100,10 +108,10 @@ export function InsightsPanel({
           </div>
           <div className="tile">
             <span className="value">
-              {stats.avgCondition ? stats.avgCondition.toFixed(1) : '—'}
+              {stats.avgScore !== null ? stats.avgScore.toFixed(1) : '—'}
               <span className="unit">/ 5</span>
             </span>
-            <span className="label">평균 컨디션</span>
+            <span className="label">평균 하루 점수</span>
           </div>
           <div className="tile">
             <span className="value">
@@ -111,6 +119,9 @@ export function InsightsPanel({
               <span className="unit">h</span>
             </span>
             <span className="label">평균 수면</span>
+            <span className="sub">
+              컨디션 {stats.avgCondition ? stats.avgCondition.toFixed(1) : '—'} / 5
+            </span>
           </div>
           <div className="tile">
             <span className="value">
@@ -133,14 +144,17 @@ export function InsightsPanel({
 
         {distTotal > 0 && (
           <div style={{ marginTop: 16 }}>
-            <span className="field-label">하루 점수 분포</span>
+            <span className="field-label">
+              하루 점수 분포 · 좋음 3.5↑ / 보통 2~3 / 별로 1.5↓
+            </span>
             <div className="distbar">
               {(['good', 'ok', 'bad'] as const).map((k) =>
                 stats.dist[k] > 0 ? (
                   <div
                     key={k}
+                    title={BAND_LABEL[k]}
                     style={{
-                      background: SCORE_COLOR[k],
+                      background: BAND_COLOR[k],
                       flex: stats.dist[k],
                       color: k === 'ok' ? '#17150f' : '#fff',
                     }}
@@ -168,10 +182,10 @@ export function InsightsPanel({
                       height: `${w.avg === null ? 4 : barHeight(w.avg)}%`,
                       background: w.avg
                         ? w.avg >= 4
-                          ? SCORE_COLOR.good
+                          ? CONDITION_BAR.good
                           : w.avg >= 3
-                            ? SCORE_COLOR.ok
-                            : SCORE_COLOR.bad
+                            ? CONDITION_BAR.ok
+                            : CONDITION_BAR.bad
                         : 'var(--surface-3)',
                     }}
                     title={w.avg ? `${w.avg.toFixed(1)} / 5 (${w.count}일)` : '기록 없음'}

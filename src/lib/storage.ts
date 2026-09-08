@@ -44,8 +44,15 @@ export function normalizeDay(date: ISODate, raw: unknown): DayRecord {
       ...base.diet,
       ...(d.diet ?? {}),
       meals: Array.isArray(d.diet?.meals) ? d.diet.meals : base.diet.meals,
+      // 크레아틴은 예전에 1~5 척도였다. 옛 기록의 숫자는 '먹었다/안 먹었다'로 옮긴다.
+      creatine:
+        typeof d.diet?.creatine === 'number'
+          ? d.diet.creatine >= 3
+          : (d.diet?.creatine ?? base.diet.creatine),
     },
     reflection: typeof d.reflection === 'string' ? d.reflection : base.reflection,
+    score: typeof d.score === 'number' ? d.score : base.score,
+    scoreNote: typeof d.scoreNote === 'string' ? d.scoreNote : base.scoreNote,
     updatedAt: typeof d.updatedAt === 'number' ? d.updatedAt : base.updatedAt,
   }
 }

@@ -74,7 +74,8 @@ export interface Diet {
   meals: Meal[]
   protein: Level | null
   water: Level | null
-  creatine: Level | null
+  /** 먹었나 안 먹었나만 본다. null = 아직 기록 안 함 */
+  creatine: boolean | null
   sugar: Level | null
 }
 
@@ -89,6 +90,10 @@ export interface DayRecord {
   diet: Diet
   interactions: Interaction[]
   reflection: string
+  /** 하루를 매기는 최종 점수. 0~5, 0.5 단위. 달력 색의 기준이다. */
+  score: number | null
+  /** 그 점수에 대한 한 줄 평 */
+  scoreNote: string
   updatedAt: number
 }
 
@@ -153,6 +158,8 @@ export function emptyDay(date: ISODate): DayRecord {
     diet: { meals: [], protein: null, water: null, creatine: null, sugar: null },
     interactions: [],
     reflection: '',
+    score: null,
+    scoreNote: '',
     updatedAt: 0,
   }
 }
