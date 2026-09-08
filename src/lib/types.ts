@@ -47,6 +47,8 @@ export interface Meal {
   label: string
   /** 먹은 양 1(아주 적게) ~ 5(아주 많이) */
   amount: Level
+  /** 'HH:MM'. 몇 시에 먹었는지 */
+  time: string | null
 }
 
 export interface Sleep {
@@ -79,6 +81,62 @@ export interface Diet {
   sugar: Level | null
 }
 
+export type EventKind = 'appointment' | 'deadline' | 'task'
+
+export const EVENT_KIND_LABEL: Record<EventKind, string> = {
+  appointment: '약속',
+  deadline: '마감',
+  task: '할일',
+}
+
+export const EVENT_KIND_COLOR: Record<EventKind, string> = {
+  appointment: '#8E6BB5',
+  deadline: '#E4572E',
+  task: '#3E8E7E',
+}
+
+/** 달력에 미리 등록해두는 일정. 지난 날에도, 앞으로의 날에도 붙는다. */
+export interface DayEvent {
+  id: string
+  title: string
+  kind: EventKind
+  /** 'HH:MM'. 시간이 정해지지 않은 일정은 null */
+  time: string | null
+  /** 약속일 때 누구와 만나는지 (관계에 등록된 사람) */
+  personIds: string[]
+  done: boolean
+  createdAt: number
+}
+
+/** 하루를 어디에 썼는지 나누는 칸. 사용자가 직접 만든다. */
+export interface TimeCategory {
+  id: string
+  label: string
+  colorIndex: number
+}
+
+export const TIME_COLORS = [
+  '#3D5AFE',
+  '#E4572E',
+  '#3E8E7E',
+  '#E8B93B',
+  '#8E6BB5',
+  '#4F7CAC',
+  '#C25A7B',
+  '#7A9E3F',
+  '#B8763E',
+  '#5B6670',
+]
+
+/** 하루를 30분씩 48칸으로 나눈다. 0번 칸이 00:00~00:30. */
+export const SLOT_COUNT = 48
+
+export function slotLabel(index: number): string {
+  const h = Math.floor(index / 2)
+  const m = index % 2 === 0 ? '00' : '30'
+  return `${String(h).padStart(2, '0')}:${m}`
+}
+
 export interface DayRecord {
   date: ISODate
   todos: Todo[]
@@ -94,6 +152,10 @@ export interface DayRecord {
   score: number | null
   /** 그 점수에 대한 한 줄 평 */
   scoreNote: string
+  /** 달력에 등록한 일정 */
+  events: DayEvent[]
+  /** 30분 단위 48칸. 각 칸에 시간 유형 id가 들어간다. 안 채운 칸은 null. */
+  timeSlots: (string | null)[]
   updatedAt: number
 }
 
@@ -115,6 +177,8 @@ export interface AppData {
   notifications: NotificationSettings
   /** 사용자가 직접 추가한 운동 부위 */
   customWorkoutParts: string[]
+  /** 사용자가 직접 만든 시간 유형 (연구실, 친구 모임, 휴식 …) */
+  timeCategories: TimeCategory[]
   /**
    * 지운 사람의 묘비. 줄을 그냥 없애면 다른 기기가 되살려 놓기 때문에
    * '지웠다'는 사실 자체를 기록해서 같이 퍼뜨려야 한다.
@@ -160,6 +224,8 @@ export function emptyDay(date: ISODate): DayRecord {
     reflection: '',
     score: null,
     scoreNote: '',
+    events: [],
+    timeSlots: Array.from({ length: SLOT_COUNT }, () => null),
     updatedAt: 0,
   }
 }

@@ -9,8 +9,15 @@ import {
   type ReactNode,
 } from 'react'
 import type { Session } from '@supabase/supabase-js'
-import type { AppData, DayRecord, ISODate, NotificationSettings, Person } from './types'
-import { emptyDay, PERSON_COLORS } from './types'
+import type {
+  AppData,
+  DayRecord,
+  ISODate,
+  NotificationSettings,
+  Person,
+  TimeCategory,
+} from './types'
+import { emptyDay, PERSON_COLORS, TIME_COLORS } from './types'
 import {
   flush,
   load,
@@ -36,6 +43,9 @@ interface StoreValue {
   setNotifications: (patch: Partial<NotificationSettings>) => void
   markNotificationFired: (slot: string, date: ISODate) => void
   addCustomWorkoutPart: (part: string) => void
+  addTimeCategory: (label: string) => TimeCategory | null
+  renameTimeCategory: (id: string, label: string) => void
+  deleteTimeCategory: (id: string) => void
   replaceAll: (next: AppData) => void
 
   // 동기화 / 계정
@@ -343,6 +353,80 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     [commit],
   )
 
+  const addTimeCategory = useCallback<StoreValue['addTimeCategory']>(
+    (label) => {
+      const clean = label.trim()
+      if (!clean) return null
+      const existing = dataRef.current.timeCategories.find((c) => c.label === clean)
+      if (existing) return existing
+      const category: TimeCategory = {
+        id: newId(),
+        label: clean,
+        colorIndex: dataRef.current.timeCategories.length % TIME_COLORS.length,
+      }
+      const nextData: AppData = {
+        ...dataRef.current,
+        timeCategories: [...dataRef.current.timeCategories, category],
+        settingsUpdatedAt: Date.now(),
+      }
+      dataRef.current = nextData
+      commit(nextData, (s) => ({ ...s, settingsDirty: true }))
+      return category
+    },
+    [commit],
+  )
+
+  const renameTimeCategory = useCallback<StoreValue['renameTimeCategory']>(
+    (id, label) => {
+      const clean = label.trim()
+      if (!clean) return
+      const nextData: AppData = {
+        ...dataRef.current,
+        timeCategories: dataRef.current.timeCategories.map((c) =>
+          c.id === id ? { ...c, label: clean } : c,
+        ),
+        settingsUpdatedAt: Date.now(),
+      }
+      dataRef.current = nextData
+      commit(nextData, (s) => ({ ...s, settingsDirty: true }))
+    },
+    [commit],
+  )
+
+  const deleteTimeCategory = useCallback<StoreValue['deleteTimeCategory']>(
+    (id) => {
+      const now = Date.now()
+      // 유형을 지우면 그 유형으로 칠해둔 시간칸도 같이 비운다.
+      const days: Record<ISODate, DayRecord> = {}
+      const touched: ISODate[] = []
+      for (const [date, day] of Object.entries(dataRef.current.days)) {
+        if (day.timeSlots.includes(id)) {
+          days[date] = {
+            ...day,
+            timeSlots: day.timeSlots.map((v) => (v === id ? null : v)),
+            updatedAt: now,
+          }
+          touched.push(date)
+        } else {
+          days[date] = day
+        }
+      }
+      const nextData: AppData = {
+        ...dataRef.current,
+        days,
+        timeCategories: dataRef.current.timeCategories.filter((c) => c.id !== id),
+        settingsUpdatedAt: now,
+      }
+      dataRef.current = nextData
+      commit(nextData, (s) => {
+        const dirtyDays = { ...s.dirtyDays }
+        for (const date of touched) dirtyDays[date] = true
+        return { ...s, dirtyDays, settingsDirty: true }
+      })
+    },
+    [commit],
+  )
+
   const replaceAll = useCallback<StoreValue['replaceAll']>(
     (next) => {
       // 통째로 갈아엎기 전에 되돌아갈 지점을 남긴다.
@@ -407,6 +491,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       setNotifications,
       markNotificationFired,
       addCustomWorkoutPart,
+      addTimeCategory,
+      renameTimeCategory,
+      deleteTimeCategory,
       replaceAll,
       sync,
       session,
@@ -428,6 +515,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       setNotifications,
       markNotificationFired,
       addCustomWorkoutPart,
+      addTimeCategory,
+      renameTimeCategory,
+      deleteTimeCategory,
       replaceAll,
       sync,
       session,

@@ -10,7 +10,6 @@ import {
   todayKey,
 } from '../../lib/date'
 import { dayScore, hasContent, scoreStep } from '../../lib/metrics'
-import { ScoreScaleLegend } from '../../components/StarRating'
 import type { DayRecord, ISODate } from '../../lib/types'
 
 interface Props {
@@ -106,27 +105,21 @@ export function CalendarWidget({ anchor, selected, days, onSelect, onAnchorChang
             >
               {Number(key.slice(8))}
               {step === null && hasContent(day) && <i className="dot" />}
+              {day?.events.some((e) => !e.done) && <i className="ev" />}
             </button>
           )
         })}
       </div>
 
-      <div className="cal-legend">
-        <span style={{ gap: 7 }}>
-          0
-          <ScoreScaleLegend />5
-        </span>
-        <span>
-          <i style={{ background: 'var(--surface-3)' }} />
-          기록 없음 {summary.none}
-        </span>
-        {summary.avg !== null && (
+      {summary.avg !== null && (
+        <div className="cal-legend">
           <span>
             이 달 평균 <strong style={{ color: 'var(--ink)' }}>{summary.avg.toFixed(1)}</strong>점 ·{' '}
-            {summary.scored}일
+            {summary.scored}일 기록
           </span>
-        )}
-      </div>
+        </div>
+      )}
+
     </Card>
   )
 }

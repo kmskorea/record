@@ -1,4 +1,4 @@
-type P = { className?: string }
+type P = { className?: string; style?: React.CSSProperties }
 
 // 크기를 지정하는 CSS가 없어도 글자 크기만큼만 차지하도록 1em을 기본값으로 둔다.
 // (SVG는 크기가 없으면 300x150으로 펼쳐져 옆 내용을 밀어낸다)

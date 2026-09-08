@@ -10,8 +10,7 @@ function StarShape({ className }: { className?: string }) {
 
 /**
  * 영화 평점처럼 0~5점을 0.5 단위로 매긴다.
- * 별 하나의 좌/우 절반이 각각 0.5점씩이고, 별 왼쪽의 작은 칸이 0점이다.
- * (0점은 '기록 안 함'과 다른, 의미 있는 최저점이라 따로 누를 자리를 뒀다.)
+ * 별 하나의 좌/우 절반이 각각 0.5점씩이다.
  */
 export function StarRating({
   value,
@@ -26,16 +25,6 @@ export function StarRating({
   return (
     <div className="rating">
       <div className="rating-row">
-        <button
-          type="button"
-          className="zero-btn"
-          aria-label="0점"
-          aria-pressed={value === 0}
-          onClick={() => onChange(value === 0 ? null : 0)}
-        >
-          0
-        </button>
-
         <div className="stars" role="group" aria-label="하루 점수">
           {[1, 2, 3, 4, 5].map((i) => {
             const fill = Math.max(0, Math.min(1, shown - (i - 1)))
