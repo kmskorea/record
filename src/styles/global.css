@@ -560,9 +560,13 @@ ul {
   word-break: break-word;
 }
 
-.todo[data-done='true'] .todo-text {
+.todo[data-done='true'] .todo-title {
   color: var(--ink-3);
   text-decoration: line-through;
+}
+
+.todo-title {
+  display: block;
 }
 
 .todo-progress {
@@ -1783,4 +1787,96 @@ input[type='number'] {
   font-weight: 800;
   letter-spacing: -0.02em;
   font-variant-numeric: tabular-nums;
+}
+
+/* ── 접히는 카드 ──────────────────────────────────────────────────────────── */
+.collapse-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  text-align: left;
+}
+
+.card[data-collapsed='false'] .collapse-head {
+  margin-bottom: 14px;
+}
+
+.collapse-head .card-title {
+  flex-shrink: 0;
+}
+
+.collapse-summary {
+  flex: 1;
+  min-width: 0;
+  text-align: right;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  color: var(--ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.collapse-summary .dim {
+  color: var(--ink-3);
+  font-weight: 550;
+}
+
+.collapse-chevron {
+  font-size: 17px;
+  color: var(--ink-3);
+  flex-shrink: 0;
+  transition: transform 0.18s ease;
+}
+
+.collapse-head[aria-expanded='true'] .collapse-chevron {
+  transform: rotate(180deg);
+}
+
+.card[data-collapsed='true'] {
+  padding-top: 15px;
+  padding-bottom: 15px;
+}
+
+/* 관계 칸에서 그날 약속을 이어받는 줄 */
+.appointment-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  text-align: left;
+  padding: 11px 12px;
+  border-radius: var(--r-md);
+  background: var(--surface-2);
+  border: 2px solid transparent;
+  transition: border-color 0.15s ease;
+}
+
+.appointment-row[aria-pressed='true'] {
+  border-color: var(--ink);
+}
+
+.appointment-cta {
+  font-size: 11.5px;
+  font-weight: 750;
+  color: var(--ink-3);
+  flex-shrink: 0;
+}
+
+.appointment-row[aria-pressed='true'] .appointment-cta {
+  color: var(--ink);
+}
+
+/* 할 일 줄 안에 붙는 일정 정보 */
+.todo-text .event-meta {
+  margin-top: 4px;
+}
+
+/* 목록 안의 사람 이름은 밑줄 없이 담백하게 */
+.todo-text .link-btn {
+  text-decoration: none;
+  color: var(--ink-2);
+  font-weight: 700;
 }

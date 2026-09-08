@@ -1,4 +1,4 @@
-import { useEffect, useRef, type ReactNode } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { CheckIcon, CloseIcon } from './icons'
 import type { Level } from '../lib/types'
 
@@ -30,6 +30,68 @@ export function Card({
       )}
       {children}
     </section>
+  )
+}
+
+/**
+ * 값이 채워지면 한 줄로 접히는 카드.
+ * 매일 같은 항목을 다 펼쳐두면 화면이 금방 길어져서, 이미 적은 것은
+ * 요약만 보여주고 누를 때 다시 펼친다.
+ */
+export function CollapsibleCard({
+  title,
+  mark,
+  summary,
+  filled,
+  children,
+}: {
+  title: ReactNode
+  mark?: string
+  /** 접혔을 때 보여줄 한 줄 요약 */
+  summary: ReactNode
+  /** 이미 값이 있는지. 처음 그릴 때 접을지 정하는 기준이다. */
+  filled: boolean
+  children: ReactNode
+}) {
+  // 처음 그릴 때만 판단한다. 적는 도중에 접히면 오히려 방해가 된다.
+  const [expanded, setExpanded] = useState(!filled)
+
+  return (
+    <section className="card" data-collapsed={!expanded}>
+      <button
+        type="button"
+        className="collapse-head"
+        aria-expanded={expanded}
+        onClick={() => setExpanded((v) => !v)}
+      >
+        <h2 className="card-title">
+          {mark && <i className="mark" style={{ background: mark }} />}
+          {title}
+        </h2>
+        {!expanded && <span className="collapse-summary">{summary}</span>}
+        <ChevronIcon className="collapse-chevron" />
+      </button>
+      {expanded && <div className="collapse-body">{children}</div>}
+    </section>
+  )
+}
+
+function ChevronIcon({ className }: { className?: string }) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      className={className}
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={2.4}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      width="1em"
+      height="1em"
+      aria-hidden="true"
+    >
+      <path d="m6 9 6 6 6-6" />
+    </svg>
   )
 }
 

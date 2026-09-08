@@ -1,6 +1,5 @@
 import { useState } from 'react'
 import { Sheet } from '../../components/ui'
-import { EventSection } from '../today/EventSection'
 import { TimeUseSection } from '../today/TimeUseSection'
 import {
   BodySection,
@@ -60,7 +59,7 @@ export function DayDetailSheet({
     >
       {empty && !expanded ? (
         <>
-          <EventSection date={date} />
+          <TodoSection date={date} onOpenPerson={onOpenPerson} />
           <p className="empty">이 날은 아직 기록이 없어요.</p>
           <button type="button" className="btn primary block" onClick={() => setExpanded(true)}>
             지금 기록하기
@@ -68,9 +67,8 @@ export function DayDetailSheet({
         </>
       ) : (
         <>
-          <EventSection date={date} />
           <ScoreSection date={date} />
-          <TodoSection date={date} />
+          <TodoSection date={date} onOpenPerson={onOpenPerson} />
           <SleepSection date={date} />
           <ConditionSection date={date} />
           <IdeaSection date={date} />
