@@ -1,12 +1,28 @@
-import { useRef } from 'react'
+import { useRef, useState } from 'react'
 import { SLOT_COUNT, TIME_COLORS, slotLabel, type TimeCategory } from '../lib/types'
 
 // 바깥 원 밖에 시각 숫자를 두므로 그만큼 여백을 두고 그린다
 const SIZE = 292
 const CENTER = SIZE / 2
-const OUTER = 118
-const INNER = 62
-const LABEL_R = OUTER + 15
+// 손가락으로 문지르기 좋게 고리를 두껍게 잡았다
+const OUTER = 122
+const INNER = 54
+const LABEL_R = OUTER + 14
+/** 고리 밖으로 조금 벗어나도 받아준다 */
+const TOLERANCE = 16
+
+/** a에서 b까지 원을 따라 가는 짧은 쪽 경로의 칸 번호들 (a는 빼고 b는 포함). */
+function arcBetween(a: number, b: number): number[] {
+  const forward = (b - a + SLOT_COUNT) % SLOT_COUNT
+  const backward = (a - b + SLOT_COUNT) % SLOT_COUNT
+  const span = Math.min(forward, backward)
+  // 한 번에 원의 1/4을 넘게 건너뛰었다면 손이 튄 것으로 보고 끝점만 칠한다
+  if (span > SLOT_COUNT / 4) return [b]
+  const step = forward <= backward ? 1 : -1
+  const out: number[] = []
+  for (let k = 1; k <= span; k++) out.push((a + step * k + SLOT_COUNT) % SLOT_COUNT)
+  return out
+}
 
 /** 0시를 12시 방향에 두고 시계 방향으로 하루를 한 바퀴 돈다. */
 function sectorPath(index: number): string {
@@ -44,20 +60,39 @@ export function DayClock({
     return c ? TIME_COLORS[c.colorIndex % TIME_COLORS.length] : null
   }
 
-  // 드래그로 여러 칸을 한 번에 칠한다. 시작할 때 칠할지 지울지 정하고 끝까지 유지한다.
-  const painting = useRef<{ value: string | null; touched: Set<number> } | null>(null)
+  /**
+   * 드래그하는 동안은 화면에만 먼저 반영하고, 손을 뗄 때 한 번에 저장한다.
+   * 칸마다 저장하면 매번 앱 전체가 다시 그려져서 손가락을 못 따라온다.
+   */
+  const [draft, setDraft] = useState<Map<number, string | null> | null>(null)
+  const painting = useRef<{ value: string | null; last: number; map: Map<number, string | null> } | null>(
+    null,
+  )
+
+  const valueAt = (i: number) => (draft?.has(i) ? draft.get(i)! : slots[i])
 
   const begin = (index: number) => {
-    const value = slots[index] === activeId ? null : activeId
-    painting.current = { value, touched: new Set([index]) }
-    onPaint([index], value)
+    // 문지르는 동안에는 고른 유형을 그대로 칠한다.
+    // 시작 칸의 상태에 따라 지우개로 바뀌면, 이어 칠하려다 지워버리게 된다.
+    const map = new Map<number, string | null>([[index, activeId]])
+    painting.current = { value: activeId, last: index, map }
+    setDraft(new Map(map))
   }
 
   const extend = (index: number) => {
     const p = painting.current
-    if (!p || p.touched.has(index)) return
-    p.touched.add(index)
-    onPaint([index], p.value)
+    if (!p || p.last === index) return
+    // 손가락은 이벤트가 듬성듬성 들어온다. 사이에 빠진 칸을 채워야 끊기지 않는다.
+    for (const i of arcBetween(p.last, index)) p.map.set(i, p.value)
+    p.last = index
+    setDraft(new Map(p.map))
+  }
+
+  const finish = () => {
+    const p = painting.current
+    painting.current = null
+    if (p && p.map.size > 0) onPaint([...p.map.keys()], p.value)
+    setDraft(null)
   }
 
   const indexFromPoint = (clientX: number, clientY: number, svg: SVGSVGElement): number | null => {
@@ -66,13 +101,13 @@ export function DayClock({
     const x = (clientX - rect.left) * scale - CENTER
     const y = (clientY - rect.top) * scale - CENTER
     const dist = Math.hypot(x, y)
-    if (dist < INNER - 6 || dist > OUTER + 6) return null
+    if (dist < INNER - TOLERANCE || dist > OUTER + TOLERANCE) return null
     let angle = Math.atan2(y, x) + Math.PI / 2
     if (angle < 0) angle += Math.PI * 2
     return Math.floor((angle / (Math.PI * 2)) * SLOT_COUNT) % SLOT_COUNT
   }
 
-  const filled = slots.filter(Boolean).length
+  const filled = slots.map((_, i) => valueAt(i)).filter(Boolean).length
 
   return (
     <div className="clock-wrap">
@@ -92,15 +127,11 @@ export function DayClock({
           const i = indexFromPoint(e.clientX, e.clientY, e.currentTarget)
           if (i !== null) extend(i)
         }}
-        onPointerUp={() => {
-          painting.current = null
-        }}
-        onPointerCancel={() => {
-          painting.current = null
-        }}
+        onPointerUp={finish}
+        onPointerCancel={finish}
       >
         {SECTORS.map((d, i) => {
-          const color = colorOf(slots[i])
+          const color = colorOf(valueAt(i))
           return (
             <path
               key={i}
@@ -111,8 +142,8 @@ export function DayClock({
             >
               <title>
                 {slotLabel(i)}
-                {slots[i]
-                  ? ` · ${categories.find((c) => c.id === slots[i])?.label ?? ''}`
+                {valueAt(i)
+                  ? ` · ${categories.find((c) => c.id === valueAt(i))?.label ?? ''}`
                   : ' · 비어 있음'}
               </title>
             </path>

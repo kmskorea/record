@@ -11,13 +11,18 @@ export function TimeUseSection({ date }: { date: ISODate }) {
   const day = getDay(date)
   const categories = data.timeCategories
 
-  const [activeId, setActiveId] = useState<string | null>(null)
+  // undefined = 아직 안 골랐음, null = 지우개, 문자열 = 그 유형
+  // 셋을 구분하지 않으면 지우개를 고르는 순간 기본값이 되돌려버린다.
+  const [activeId, setActiveId] = useState<string | null | undefined>(undefined)
   const [adding, setAdding] = useState(false)
   const [label, setLabel] = useState('')
 
-  // 고른 유형이 지워졌으면 선택을 풀어준다.
+  // 유형이 있으면 첫 번째를 기본으로 고른다. 앱을 다시 열 때마다 지우개로
+  // 시작하면, 칠하려고 문지른 손이 오히려 기록을 지운다.
   useEffect(() => {
-    if (activeId && !categories.some((c) => c.id === activeId)) setActiveId(null)
+    if (categories.length === 0) return
+    const gone = typeof activeId === 'string' && !categories.some((c) => c.id === activeId)
+    if (activeId === undefined || gone) setActiveId(categories[0].id)
   }, [categories, activeId])
 
   const paint = (indexes: number[], value: string | null) => {
@@ -70,7 +75,7 @@ export function TimeUseSection({ date }: { date: ISODate }) {
             className="paint-chip"
             aria-pressed={activeId === null}
             onClick={() => setActiveId(null)}
-            title="칠해진 칸을 다시 누르면 지워집니다"
+            title="이 상태로 문지르면 지워집니다"
           >
             <TrashIcon style={{ fontSize: 13 }} />
             지우개
@@ -112,13 +117,13 @@ export function TimeUseSection({ date }: { date: ISODate }) {
       {categories.length > 0 && (
         <>
           <p className="card-note" style={{ marginBottom: 4 }}>
-            유형을 고르고 시계를 문지르면 칠해집니다. 같은 칸을 다시 누르면 지워져요.
-            {' '}유형을 두 번 누르면 삭제됩니다.
+            유형을 고르고 시계를 문지르면 칠해집니다. 지울 때는 지우개를 고르고 문지르세요.
+            {' '}유형 이름을 두 번 누르면 그 유형이 삭제됩니다.
           </p>
           <DayClock
             slots={day.timeSlots}
             categories={categories}
-            activeId={activeId}
+            activeId={activeId ?? null}
             onPaint={paint}
           />
           <TimeShareBar slots={day.timeSlots} categories={categories} />
