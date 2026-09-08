@@ -1,0 +1,158 @@
+/** 앱 전체에서 쓰는 데이터 모델. 날짜 키는 항상 'YYYY-MM-DD' (로컬 기준). */
+
+export type ISODate = string
+
+/** 1~5 단계 척도. 컨디션, 식사량, 영양 섭취 등에 공통으로 쓴다. */
+export type Level = 1 | 2 | 3 | 4 | 5
+
+export type Intensity = 'low' | 'mid' | 'high'
+
+export interface Todo {
+  id: string
+  text: string
+  done: boolean
+  createdAt: number
+}
+
+export interface Idea {
+  id: string
+  text: string
+  /** 기록한 시각 (epoch ms). 아이디어는 "그때그때" 남기는 것이라 시각을 같이 보관한다. */
+  at: number
+}
+
+export interface Person {
+  id: string
+  name: string
+  /** 자유 입력. '대학교 친구', '가족', '직장 동료' 등 사용자가 알아서 적는다. */
+  relation: string
+  /** 프로필 색상 인덱스 (PERSON_COLORS 참조) */
+  colorIndex: number
+  createdAt: number
+}
+
+/** 특정 날짜에 특정 인물과 있었던 일. */
+export interface Interaction {
+  id: string
+  personId: string
+  note: string
+  at: number
+}
+
+export interface Meal {
+  id: string
+  /** '아침' | '점심' | '저녁' | '간식' 또는 자유 입력 */
+  label: string
+  /** 먹은 양 1(아주 적게) ~ 5(아주 많이) */
+  amount: Level
+}
+
+export interface Sleep {
+  /** 잔 시간(시간 단위, 0.5 단위) */
+  hours: number | null
+  bedTime: string | null
+  wakeTime: string | null
+}
+
+export interface Condition {
+  score: Level | null
+  reason: string
+}
+
+export interface Workout {
+  /** null = 아직 기록 안 함, false = 안 함, true = 함 */
+  did: boolean | null
+  /** 가슴/등/어깨/팔/코어/하체/유산소 등 다중 선택 */
+  parts: string[]
+  intensity: Intensity | null
+  memo: string
+}
+
+export interface Diet {
+  meals: Meal[]
+  protein: Level | null
+  water: Level | null
+  creatine: Level | null
+  sugar: Level | null
+}
+
+export interface DayRecord {
+  date: ISODate
+  todos: Todo[]
+  sleep: Sleep
+  condition: Condition
+  ideas: Idea[]
+  workout: Workout
+  weight: number | null
+  diet: Diet
+  interactions: Interaction[]
+  reflection: string
+  updatedAt: number
+}
+
+export interface NotificationSettings {
+  enabled: boolean
+  /** 'HH:MM' 24시간제 */
+  morningTime: string
+  nightTime: string
+  morningEnabled: boolean
+  nightEnabled: boolean
+  /** 슬롯별 마지막 발송 날짜 — 하루에 한 번만 울리도록 */
+  lastFired: Record<string, ISODate>
+}
+
+export interface AppData {
+  version: number
+  days: Record<ISODate, DayRecord>
+  people: Person[]
+  notifications: NotificationSettings
+  /** 사용자가 직접 추가한 운동 부위 */
+  customWorkoutParts: string[]
+}
+
+export const WORKOUT_PARTS = ['가슴', '등', '어깨', '팔', '코어', '하체', '유산소'] as const
+
+export const MEAL_LABELS = ['아침', '점심', '저녁', '간식'] as const
+
+export const INTENSITY_LABEL: Record<Intensity, string> = {
+  low: '낮음',
+  mid: '보통',
+  high: '높음',
+}
+
+/** 사람 프로필에 돌아가며 배정되는 색. */
+export const PERSON_COLORS = [
+  '#E4572E',
+  '#3D5AFE',
+  '#3E8E7E',
+  '#E8B93B',
+  '#8E6BB5',
+  '#C25A7B',
+  '#4F7CAC',
+  '#B8763E',
+]
+
+export function emptyDay(date: ISODate): DayRecord {
+  return {
+    date,
+    todos: [],
+    sleep: { hours: null, bedTime: null, wakeTime: null },
+    condition: { score: null, reason: '' },
+    ideas: [],
+    workout: { did: null, parts: [], intensity: null, memo: '' },
+    weight: null,
+    diet: { meals: [], protein: null, water: null, creatine: null, sugar: null },
+    interactions: [],
+    reflection: '',
+    updatedAt: 0,
+  }
+}
+
+export const DEFAULT_NOTIFICATIONS: NotificationSettings = {
+  enabled: false,
+  morningTime: '09:30',
+  nightTime: '23:30',
+  morningEnabled: true,
+  nightEnabled: true,
+  lastFired: {},
+}
