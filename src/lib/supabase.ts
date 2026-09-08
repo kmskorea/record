@@ -49,7 +49,9 @@ export function getClient(): SupabaseClient | null {
     auth: {
       persistSession: true,
       autoRefreshToken: true,
-      detectSessionInUrl: false,
+      // 이메일 확인 링크·비밀번호 재설정 링크는 세션 토큰을 URL에 담아 앱으로
+      // 돌아온다. false로 두면 그 토큰을 무시해서 로그인이 안 된 채로 뜬다.
+      detectSessionInUrl: true,
     },
   })
   clientUrl = config.url
