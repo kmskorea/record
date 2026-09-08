@@ -103,9 +103,12 @@ export function TodoSection({ date }: SectionProps) {
 function hoursBetween(bed: string, wake: string): number {
   const [bh, bm] = bed.split(':').map(Number)
   const [wh, wm] = wake.split(':').map(Number)
-  let mins = wh * 60 + wm - (bh * 60 + bm)
-  if (mins <= 0) mins += 24 * 60
-  return Math.round((mins / 60) * 10) / 10
+  const mins = wh * 60 + wm - (bh * 60 + bm)
+  // 두 시각이 정확히 같으면(모바일에서 시간 입력칸을 탭만 해도 현재 시각이
+  // 찍히는 경우가 흔하다) '24시간 잤다'로 계산하지 않는다.
+  if (mins === 0) return 0
+  const wrapped = mins < 0 ? mins + 24 * 60 : mins
+  return Math.round((wrapped / 60) * 10) / 10
 }
 
 export function SleepSection({ date }: SectionProps) {
@@ -117,10 +120,19 @@ export function SleepSection({ date }: SectionProps) {
       sleep: {
         bedTime,
         wakeTime,
-        hours: bedTime && wakeTime ? hoursBetween(bedTime, wakeTime) : d.sleep.hours,
+        // 취침·기상이 같은 시각으로 찍히면(주로 모바일 시간 선택기가 탭만
+        // 해도 현재 시각을 기본값으로 채우는 탓) 계산이 의미가 없으므로
+        // 기존에 적어둔 시간을 그대로 둔다.
+        hours:
+          bedTime && wakeTime && bedTime !== wakeTime
+            ? hoursBetween(bedTime, wakeTime)
+            : d.sleep.hours,
       },
     }))
   }
+
+  const clear = () =>
+    updateDay(date, () => ({ sleep: { hours: null, bedTime: null, wakeTime: null } }))
 
   const nudge = (delta: number) =>
     updateDay(date, (d) => ({
@@ -154,6 +166,17 @@ export function SleepSection({ date }: SectionProps) {
           <PlusIcon />
         </button>
       </div>
+
+      {(sleep.hours !== null || sleep.bedTime || sleep.wakeTime) && (
+        <button
+          type="button"
+          className="btn ghost sm"
+          style={{ marginBottom: 12 }}
+          onClick={clear}
+        >
+          지우고 다시 입력
+        </button>
+      )}
 
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
         <label className="field">
