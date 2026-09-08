@@ -13,7 +13,7 @@ import {
   TodoSection,
   WorkoutSection,
 } from '../today/sections'
-import { formatKorean, formatRelative } from '../../lib/date'
+import { formatKorean, formatRelative, todayKey } from '../../lib/date'
 import { dayScore, hasContent, scoreStep } from '../../lib/metrics'
 import { useStore } from '../../lib/store'
 import type { ISODate } from '../../lib/types'
@@ -33,6 +33,9 @@ export function DayDetailSheet({
   const step = score === null ? null : scoreStep(score)
   const [expanded, setExpanded] = useState(false)
   const empty = !hasContent(day)
+  // 아직 오지 않은 날에 '오늘 어땠나'를 묻는 칸들은 의미가 없다.
+  // 미리 잡아둘 수 있는 것, 곧 일정과 할 일만 남긴다.
+  const future = date > todayKey()
 
   return (
     <Sheet
@@ -57,7 +60,14 @@ export function DayDetailSheet({
         )
       }
     >
-      {empty && !expanded ? (
+      {future ? (
+        <>
+          <TodoSection date={date} onOpenPerson={onOpenPerson} />
+          <p className="card-note" style={{ textAlign: 'center' }}>
+            지난 뒤에 열면 그날 기록을 남길 수 있어요.
+          </p>
+        </>
+      ) : empty && !expanded ? (
         <>
           <TodoSection date={date} onOpenPerson={onOpenPerson} />
           <p className="empty">이 날은 아직 기록이 없어요.</p>
