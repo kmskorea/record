@@ -460,7 +460,10 @@ export function DietSection({ date }: SectionProps) {
 
   const addMeal = (label: string) =>
     updateDay(date, (d) => ({
-      diet: { ...d.diet, meals: [...d.diet.meals, { id: newId(), label, amount: 3 as Level }] },
+      diet: {
+        ...d.diet,
+        meals: [...d.diet.meals, { id: newId(), label, amount: 3 as Level, time: null }],
+      },
     }))
 
   const usedLabels = new Set(diet.meals.map((m) => m.label))
@@ -483,8 +486,26 @@ export function DietSection({ date }: SectionProps) {
                 marginBottom: 8,
               }}
             >
-              <span style={{ fontWeight: 700, fontSize: 14 }}>{meal.label}</span>
-              <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <span style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
+                <span style={{ fontWeight: 700, fontSize: 14, flexShrink: 0 }}>{meal.label}</span>
+                <input
+                  type="time"
+                  className="input meal-time"
+                  aria-label={`${meal.label} 시각`}
+                  value={meal.time ?? ''}
+                  onChange={(e) =>
+                    updateDay(date, (d) => ({
+                      diet: {
+                        ...d.diet,
+                        meals: d.diet.meals.map((m) =>
+                          m.id === meal.id ? { ...m, time: e.target.value || null } : m,
+                        ),
+                      },
+                    }))
+                  }
+                />
+              </span>
+              <span style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
                 <span style={{ fontSize: 12, color: 'var(--ink-3)', fontWeight: 600 }}>
                   {AMOUNT_LABELS[meal.amount - 1]}
                 </span>
@@ -790,7 +811,7 @@ export function ScoreSection({ date }: SectionProps) {
   const day = getDay(date)
 
   return (
-    <Card title="오늘 몇 점?" mark="var(--blue)" note="달력 색의 기준">
+    <Card title="하루 감상평" mark="var(--blue)">
       <StarRating
         value={day.score}
         onChange={(v) => updateDay(date, () => ({ score: v }))}

@@ -11,6 +11,8 @@ import {
   TodoSection,
   WorkoutSection,
 } from './sections'
+import { EventSection } from './EventSection'
+import { TimeUseSection } from './TimeUseSection'
 import { SettingsSheet } from './SettingsSheet'
 import { SettingsIcon } from '../../components/icons'
 import { SyncBadge } from '../../components/SyncBadge'
@@ -45,6 +47,7 @@ export function TodayScreen({ onOpenPerson }: { onOpenPerson: (id: string) => vo
 
       <div className="section-label">사전 관리</div>
       <div className="masonry">
+        <EventSection date={today} />
         <TodoSection date={today} />
         <SleepSection date={today} />
         <ConditionSection date={today} />
@@ -63,6 +66,7 @@ export function TodayScreen({ onOpenPerson }: { onOpenPerson: (id: string) => vo
       </div>
 
       <div className="section-label">하루 마무리</div>
+      <TimeUseSection date={today} />
       <ScoreSection date={today} />
 
       {settingsOpen && <SettingsSheet onClose={() => setSettingsOpen(false)} />}

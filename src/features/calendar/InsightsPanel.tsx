@@ -15,7 +15,8 @@ import {
   todoRate,
   weekdayAverages,
 } from '../../lib/metrics'
-import { PERSON_COLORS, type DayRecord, type ISODate } from '../../lib/types'
+import { PERSON_COLORS, type DayRecord, type ISODate, type TimeCategory } from '../../lib/types'
+import { TimeScoreWidget, TimeShareWidget, UpcomingWidget } from './TimeInsights'
 
 const WINDOW = 30
 
@@ -32,12 +33,16 @@ export function InsightsPanel({
   today,
   days,
   people,
+  timeCategories,
   onOpenPerson,
+  onOpenDate,
 }: {
   today: ISODate
   days: Record<ISODate, DayRecord>
   people: { id: string; name: string; relation: string; colorIndex: number }[]
+  timeCategories: TimeCategory[]
   onOpenPerson: (id: string) => void
+  onOpenDate: (date: ISODate) => void
 }) {
   const dates = useMemo(() => rangeEndingAt(today, WINDOW), [today])
 
@@ -97,6 +102,8 @@ export function InsightsPanel({
 
   return (
     <>
+      <UpcomingWidget days={days} today={today} people={people} onOpenDate={onOpenDate} />
+
       <Card title="인사이트" mark="var(--green)" note={`최근 ${WINDOW}일`}>
         <div className="tiles">
           <div className="tile filled" style={{ background: 'var(--accent)' }}>
@@ -168,6 +175,20 @@ export function InsightsPanel({
         )}
       </Card>
 
+      <TimeShareWidget
+        dates={dates}
+        days={days}
+        categories={timeCategories}
+        windowDays={WINDOW}
+      />
+
+      <TimeScoreWidget
+        dates={dates}
+        days={days}
+        categories={timeCategories}
+        windowDays={WINDOW}
+      />
+
       <Card title="요일별 컨디션" mark="var(--yellow)" note={`최근 ${WINDOW}일 평균`}>
         {stats.weekday.every((w) => w.avg === null) ? (
           <Empty>컨디션을 며칠 기록하면 요일 패턴이 보여요.</Empty>
@@ -203,9 +224,7 @@ export function InsightsPanel({
 
       <Card title="발견" mark="var(--purple)" note="자동으로 찾은 관계">
         {discoveries.length === 0 ? (
-          <Empty>
-            며칠 더 기록하면 항목들 사이의 관계를 찾아드려요. (같은 날 기록이 5일 이상 필요)
-          </Empty>
+          <Empty>며칠 더 기록하면 항목들 사이의 관계를 찾아드려요.</Empty>
         ) : (
           <div className="stack">
             {discoveries.map((d) => (

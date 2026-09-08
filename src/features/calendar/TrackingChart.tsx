@@ -47,7 +47,8 @@ export function TrackingChart({ end, days, selected, onToggle }: Props) {
     [metrics, dates, days],
   )
 
-  const left = multi ? 14 : PAD.left
+  // 한 항목만 볼 때만 왼쪽에 눈금 숫자 자리를 비운다
+  const left = metrics.length === 1 ? PAD.left : 14
   const innerW = Math.max(0, width - left - PAD.right)
   const innerH = HEIGHT - PAD.top - PAD.bottom
 
@@ -132,12 +133,14 @@ export function TrackingChart({ end, days, selected, onToggle }: Props) {
         ))}
       </div>
 
-      {metrics.length === 0 ? (
-        <p className="empty">위에서 보고 싶은 항목을 골라주세요. 여러 개를 고르면 겹쳐서 비교합니다.</p>
-      ) : (
-        <>
+      <>
           <div className="readout">
             <span className="date">{formatKorean(dates[activeIndex])}</span>
+            {metrics.length === 0 && (
+              <span className="val" style={{ color: 'var(--ink-3)', fontWeight: 600 }}>
+                위에서 항목을 고르면 그려집니다. 여러 개를 고르면 겹쳐서 비교해요.
+              </span>
+            )}
             {series.map(({ metric, points }) => (
               <span className="val" key={metric.id}>
                 <i style={{ background: metric.color }} />
@@ -270,7 +273,7 @@ export function TrackingChart({ end, days, selected, onToggle }: Props) {
             )}
           </div>
 
-          {!hasAnyData && (
+          {metrics.length > 0 && !hasAnyData && (
             <p className="empty">이 기간에 기록된 값이 없습니다.</p>
           )}
 
@@ -311,7 +314,6 @@ export function TrackingChart({ end, days, selected, onToggle }: Props) {
             </div>
           )}
         </>
-      )}
     </Card>
   )
 }

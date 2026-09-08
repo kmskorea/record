@@ -1,5 +1,5 @@
-import type { AppData, DayRecord, ISODate, Person } from './types'
-import { DEFAULT_NOTIFICATIONS, emptyDay } from './types'
+import type { AppData, DayRecord, ISODate, Person, TimeCategory } from './types'
+import { DEFAULT_NOTIFICATIONS, SLOT_COUNT, emptyDay } from './types'
 
 const KEY = 'record.app.v1'
 const SYNC_KEY = 'record.sync.v1'
@@ -13,6 +13,7 @@ export function emptyData(): AppData {
     people: [],
     notifications: { ...DEFAULT_NOTIFICATIONS, lastFired: {} },
     customWorkoutParts: [],
+    timeCategories: [],
     deletedPeople: {},
     settingsUpdatedAt: 0,
   }
@@ -53,6 +54,12 @@ export function normalizeDay(date: ISODate, raw: unknown): DayRecord {
     reflection: typeof d.reflection === 'string' ? d.reflection : base.reflection,
     score: typeof d.score === 'number' ? d.score : base.score,
     scoreNote: typeof d.scoreNote === 'string' ? d.scoreNote : base.scoreNote,
+    events: Array.isArray(d.events) ? d.events : base.events,
+    // 칸 수는 항상 48이어야 한다. 모자라거나 남으면 잘라 맞춘다.
+    timeSlots: Array.from({ length: SLOT_COUNT }, (_, i) => {
+      const v = Array.isArray(d.timeSlots) ? d.timeSlots[i] : null
+      return typeof v === 'string' ? v : null
+    }),
     updatedAt: typeof d.updatedAt === 'number' ? d.updatedAt : base.updatedAt,
   }
 }
@@ -108,6 +115,11 @@ export function migrate(input: unknown): AppData {
     people,
     notifications: { ...base.notifications, ...(raw.notifications ?? {}) },
     customWorkoutParts: Array.isArray(raw.customWorkoutParts) ? raw.customWorkoutParts : [],
+    timeCategories: Array.isArray(raw.timeCategories)
+      ? (raw.timeCategories.filter(
+          (c) => c && typeof c.id === 'string' && typeof c.label === 'string',
+        ) as TimeCategory[])
+      : [],
     deletedPeople:
       raw.deletedPeople && typeof raw.deletedPeople === 'object' ? raw.deletedPeople : {},
     settingsUpdatedAt: typeof raw.settingsUpdatedAt === 'number' ? raw.settingsUpdatedAt : 0,

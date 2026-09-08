@@ -153,13 +153,11 @@ export interface ScoreStep {
 }
 
 /**
- * 0~5점을 0.5 단위로 색에 대응시킨다.
- * 가운데(2.5)를 흰색으로 두고 위로는 파랑이 진해지고 아래로는 빨강이 진해진다.
- * 0점만 따로 검은색이라, 아무것도 안 된 날이 한눈에 드러난다.
+ * 0.5~5점을 0.5 단위로 색에 대응시킨다.
+ * 가운데(2.5)를 흰색으로 두고 위로는 파랑이, 아래로는 빨강이 진해진다.
  */
 export const SCORE_STEPS: ScoreStep[] = [
-  { value: 0, bg: '#17150F', ink: '#FFFFFF', label: '최악' },
-  { value: 0.5, bg: '#B3200B', ink: '#FFFFFF', label: '' },
+  { value: 0.5, bg: '#B3200B', ink: '#FFFFFF', label: '최악' },
   { value: 1, bg: '#E4572E', ink: '#FFFFFF', label: '' },
   { value: 1.5, bg: '#F0937A', ink: '#17150F', label: '' },
   { value: 2, bg: '#F8CBBD', ink: '#17150F', label: '' },
@@ -175,9 +173,9 @@ const STEP_BY_VALUE = new Map(SCORE_STEPS.map((s) => [s.value, s]))
 
 /** 가장 가까운 0.5 눈금의 색을 돌려준다. */
 export function scoreStep(score: number): ScoreStep {
-  const clamped = Math.max(0, Math.min(5, score))
+  const clamped = Math.max(0.5, Math.min(5, score))
   const snapped = Math.round(clamped * 2) / 2
-  return STEP_BY_VALUE.get(snapped) ?? SCORE_STEPS[5]
+  return STEP_BY_VALUE.get(snapped) ?? SCORE_STEPS[4]
 }
 
 /** 통계에서 쓰는 굵은 구간. */
@@ -216,6 +214,8 @@ export function hasContent(day: DayRecord | undefined): boolean {
     day.reflection.trim() !== '' ||
     day.score !== null ||
     day.scoreNote.trim() !== '' ||
+    day.events.length > 0 ||
+    day.timeSlots.some((v) => v !== null) ||
     day.condition.score !== null ||
     day.condition.reason.trim() !== '' ||
     day.sleep.hours !== null ||

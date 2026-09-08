@@ -49,7 +49,9 @@ export function CalendarScreen({ onOpenPerson }: { onOpenPerson: (id: string) =>
             today={today}
             days={data.days}
             people={data.people}
+            timeCategories={data.timeCategories}
             onOpenPerson={onOpenPerson}
+            onOpenDate={setSelected}
           />
         </div>
       </div>

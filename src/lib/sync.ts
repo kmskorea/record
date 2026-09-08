@@ -36,14 +36,22 @@ interface PersonRow {
 }
 
 interface SettingsRow {
-  data: { notifications?: unknown; customWorkoutParts?: string[] }
+  data: {
+    notifications?: unknown
+    customWorkoutParts?: string[]
+    timeCategories?: AppData['timeCategories']
+  }
   updated_at: number
 }
 
 /** 알림 발송 이력은 기기마다 다르므로 올리지 않는다. */
 function settingsPayload(data: AppData) {
   const { lastFired: _lastFired, ...notifications } = data.notifications
-  return { notifications, customWorkoutParts: data.customWorkoutParts }
+  return {
+    notifications,
+    customWorkoutParts: data.customWorkoutParts,
+    timeCategories: data.timeCategories,
+  }
 }
 
 export interface SyncOutcome {
@@ -204,6 +212,7 @@ export async function syncOnce(
 
   let notifications = next.notifications
   let customWorkoutParts = next.customWorkoutParts
+  let timeCategories = next.timeCategories
   let settingsUpdatedAt = next.settingsUpdatedAt
   const remoteSettings = settingsRow as SettingsRow | null
   if (
@@ -221,11 +230,23 @@ export async function syncOnce(
     if (Array.isArray(incoming.customWorkoutParts)) {
       customWorkoutParts = incoming.customWorkoutParts
     }
+    if (Array.isArray(incoming.timeCategories)) {
+      timeCategories = incoming.timeCategories
+    }
     settingsUpdatedAt = remoteSettings.updated_at
     changed = true
   }
 
-  next = { ...next, days, people, deletedPeople, notifications, customWorkoutParts, settingsUpdatedAt }
+  next = {
+    ...next,
+    days,
+    people,
+    deletedPeople,
+    notifications,
+    customWorkoutParts,
+    timeCategories,
+    settingsUpdatedAt,
+  }
   nextState = { ...nextState, cursor, lastSyncedAt: Date.now() }
 
   return { data: next, state: nextState, changed }
