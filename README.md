@@ -61,6 +61,43 @@ npm run preview
 
 기기 간 자동 동기화가 필요해지면 `src/lib/storage.ts`(읽기/쓰기)와 `src/lib/store.tsx`(상태)만 원격 저장소로 바꾸면 나머지 화면은 그대로 씁니다.
 
+## 수정 가이드
+
+`npm run dev`로 띄워두면 저장하는 즉시 화면에 반영됩니다. 자주 건드리게 되는 곳:
+
+| 바꾸고 싶은 것 | 파일 | 위치 |
+|---|---|---|
+| 달력 색 기준 (컨디션 말고 다른 기준으로) | `src/lib/metrics.ts` | `dayScore()` |
+| 달력 색상값 (파랑/노랑/빨강) | `src/lib/metrics.ts` | `SCORE_COLOR` |
+| 트래킹 항목 추가·삭제·이름·단위 | `src/lib/metrics.ts` | `METRICS` |
+| 발견 카드 민감도 | `src/lib/metrics.ts` | `findDiscoveries()`의 `minPairs`, `0.35` |
+| 운동 부위 기본 목록 | `src/lib/types.ts` | `WORKOUT_PARTS` |
+| 끼니 종류 | `src/lib/types.ts` | `MEAL_LABELS` |
+| 알림 기본 시각 | `src/lib/types.ts` | `DEFAULT_NOTIFICATIONS` |
+| 알림 문구 | `src/lib/notifications.ts` | `SLOT_COPY` |
+| 인사이트 집계 기간 (30일) | `src/features/calendar/InsightsPanel.tsx` | `WINDOW` |
+| 그래프 기간 버튼 (7/30/90일) | `src/features/calendar/TrackingChart.tsx` | `RANGES` |
+| 영양소 항목 (단백질·수분·크레아틴·당분) | `src/features/today/sections.tsx` | `DietSection`의 `nutrients` |
+| 오늘 탭 섹션 순서 | `src/features/today/TodayScreen.tsx` | JSX 순서 그대로 |
+| 전체 색·여백·폰트 | `src/styles/global.css` | 맨 위 `:root` 토큰 |
+
+### 기록 항목을 새로 추가하려면
+
+예를 들어 카페인을 넣는다면 순서대로:
+
+1. `src/lib/types.ts` — 모델에 필드 추가 + `emptyDay()`에 기본값
+2. `src/features/today/sections.tsx` — 입력 UI 추가
+3. `src/lib/metrics.ts` — 그래프에도 띄우려면 `METRICS`에 항목 추가
+4. `src/lib/search.ts` — 글자로 검색되게 하려면 `searchAll()`에 추가
+
+### 고칠 때 기록이 날아가지 않게
+
+코드를 고쳐도 기록은 남습니다. 브라우저 localStorage에 따로 저장되고, 배포해도 주소가 같으면 유지됩니다. 다만 세 가지를 주의하세요.
+
+- **주소가 바뀌면 기록이 따라오지 않습니다.** 호스팅을 옮기면 새 주소는 빈 상태입니다. 옮기기 전에 설정 → 데이터 → 내보내기로 JSON을 받아 새 주소에서 불러오세요.
+- **필드를 새로 추가하면 예전 날짜에는 그 값이 없습니다.** 저장된 기록은 그 시점 모양 그대로 읽히므로 새 필드는 옛 기록에서 `undefined`입니다. 읽을 때 `?? 기본값`을 붙이세요. 예전 기록을 한 번에 채우고 싶으면 `src/lib/storage.ts`의 `migrate()`에서 처리하면 됩니다.
+- **브라우저 데이터를 지우면 사라집니다.** 가끔 내보내 두세요.
+
 ## 구조
 
 ```
