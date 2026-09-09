@@ -1,5 +1,21 @@
-import type { AppData, DayEvent, DayRecord, ISODate, Person, TimeCategory, Todo } from './types'
-import { DEFAULT_NOTIFICATIONS, SLOT_COUNT, emptyDay } from './types'
+import type {
+  AppData,
+  DayEvent,
+  DayRecord,
+  ISODate,
+  Person,
+  TimeCategory,
+  Todo,
+  Workout,
+} from './types'
+import {
+  DEFAULT_NOTIFICATIONS,
+  LEGACY_RUNNING_PART,
+  RUNNING_PART,
+  SLOT_COUNT,
+  WORKOUT_PARTS,
+  emptyDay,
+} from './types'
 
 const KEY = 'record.app.v1'
 const SYNC_KEY = 'record.sync.v1'
@@ -16,6 +32,32 @@ export function emptyData(): AppData {
     timeCategories: [],
     deletedPeople: {},
     settingsUpdatedAt: 0,
+  }
+}
+
+/** 0이나 음수, NaN은 '안 적었다'로 본다. 0km 러닝은 기록이 아니다. */
+function positive(v: unknown): number | null {
+  return typeof v === 'number' && Number.isFinite(v) && v > 0 ? v : null
+}
+
+/**
+ * 부위 목록의 '유산소'를 '러닝'으로 옮긴다. 옛 기록이 아무 부위도 없는 것처럼
+ * 보이면 안 된다. 둘 다 들어있는 기록이 생길 수 있어 중복도 함께 걷어낸다.
+ */
+function normalizeWorkout(raw: Partial<Workout> | undefined, base: Workout): Workout {
+  const source = Array.isArray(raw?.parts) ? raw.parts : base.parts
+  const parts: string[] = []
+  for (const p of source) {
+    if (typeof p !== 'string') continue
+    const name = p === LEGACY_RUNNING_PART ? RUNNING_PART : p
+    if (!parts.includes(name)) parts.push(name)
+  }
+  const running = (raw?.running ?? {}) as Partial<Workout['running']>
+  return {
+    ...base,
+    ...(raw ?? {}),
+    parts,
+    running: { km: positive(running.km), paceSec: positive(running.paceSec) },
   }
 }
 
@@ -40,11 +82,7 @@ export function normalizeDay(date: ISODate, raw: unknown): DayRecord {
     interactions: Array.isArray(d.interactions) ? d.interactions : base.interactions,
     sleep: { ...base.sleep, ...(d.sleep ?? {}) },
     condition: { ...base.condition, ...(d.condition ?? {}) },
-    workout: {
-      ...base.workout,
-      ...(d.workout ?? {}),
-      parts: Array.isArray(d.workout?.parts) ? d.workout.parts : base.workout.parts,
-    },
+    workout: normalizeWorkout(d.workout, base.workout),
     diet: {
       ...base.diet,
       ...(d.diet ?? {}),
@@ -154,7 +192,14 @@ export function migrate(input: unknown): AppData {
     days,
     people,
     notifications: { ...base.notifications, ...(raw.notifications ?? {}) },
-    customWorkoutParts: Array.isArray(raw.customWorkoutParts) ? raw.customWorkoutParts : [],
+    // 예전에 직접 추가해둔 이름이 기본 부위가 되는 일이 있다('러닝'). 칩이 두 번
+    // 나오지 않게 기본 목록과 겹치는 건 여기서 걷어낸다.
+    customWorkoutParts: Array.isArray(raw.customWorkoutParts)
+      ? raw.customWorkoutParts.filter(
+          (c): c is string =>
+            typeof c === 'string' && !(WORKOUT_PARTS as readonly string[]).includes(c),
+        )
+      : [],
     timeCategories: Array.isArray(raw.timeCategories)
       ? (raw.timeCategories.filter(
           (c) => c && typeof c.id === 'string' && typeof c.label === 'string',

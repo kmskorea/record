@@ -10,7 +10,19 @@ import {
   todayKey,
 } from '../../lib/date'
 import { dayScore, hasContent, scoreStep } from '../../lib/metrics'
-import type { DayRecord, ISODate } from '../../lib/types'
+import { isRunning, isStrength } from '../../lib/types'
+import type { DayRecord, ISODate, Workout } from '../../lib/types'
+
+/**
+ * 그 날 무슨 운동을 했는지. 달력 칸 왼쪽 위에 색으로 찍는다.
+ * '했음'이라고만 하고 부위를 안 고른 날은 근력으로 본다 — 표시가
+ * 아예 없는 것보다는 낫고, 초록은 이 앱에서 계속 운동을 뜻해왔다.
+ */
+function workoutMarks(workout: Workout | undefined): { strength: boolean; run: boolean } {
+  if (!workout || workout.did !== true) return { strength: false, run: false }
+  const run = isRunning(workout.parts)
+  return { strength: isStrength(workout.parts) || !run, run }
+}
 
 interface Props {
   anchor: ISODate
@@ -28,6 +40,8 @@ export function CalendarWidget({ anchor, selected, days, onSelect, onAnchorChang
     let scored = 0
     let none = 0
     let total = 0
+    let strengthDays = 0
+    let runDays = 0
     for (const key of grid) {
       if (!isSameMonth(key, anchor)) continue
       const score = dayScore(days[key])
@@ -36,8 +50,11 @@ export function CalendarWidget({ anchor, selected, days, onSelect, onAnchorChang
         scored++
         total += score
       }
+      const mark = workoutMarks(days[key]?.workout)
+      if (mark.strength) strengthDays++
+      if (mark.run) runDays++
     }
-    return { scored, none, avg: scored ? total / scored : null }
+    return { scored, none, avg: scored ? total / scored : null, strengthDays, runDays }
   }, [grid, anchor, days])
 
   return (
@@ -83,6 +100,7 @@ export function CalendarWidget({ anchor, selected, days, onSelect, onAnchorChang
           const score = dayScore(day)
           const step = score === null ? null : scoreStep(score)
           const outside = !isSameMonth(key, anchor)
+          const mark = workoutMarks(day?.workout)
           return (
             <button
               key={key}
@@ -97,13 +115,21 @@ export function CalendarWidget({ anchor, selected, days, onSelect, onAnchorChang
                   ? ({ '--cell-color': step.bg, '--cell-ink': step.ink } as React.CSSProperties)
                   : undefined
               }
-              aria-label={`${key}${score !== null ? ` · ${score}점` : ''}`}
+              aria-label={`${key}${score !== null ? ` · ${score}점` : ''}${
+                mark.strength ? ' · 근력' : ''
+              }${mark.run ? ' · 러닝' : ''}`}
               onClick={() => {
                 onSelect(key)
                 if (outside) onAnchorChange(key)
               }}
             >
               {Number(key.slice(8))}
+              {(mark.strength || mark.run) && (
+                <span className="wo">
+                  {mark.strength && <i className="wo-strength" />}
+                  {mark.run && <i className="wo-run" />}
+                </span>
+              )}
               {step === null && hasContent(day) && <i className="dot" />}
               {day?.events.some((e) => !e.done) && <i className="ev" />}
             </button>
@@ -111,12 +137,26 @@ export function CalendarWidget({ anchor, selected, days, onSelect, onAnchorChang
         })}
       </div>
 
-      {summary.avg !== null && (
+      {(summary.avg !== null || summary.strengthDays > 0 || summary.runDays > 0) && (
         <div className="cal-legend">
-          <span>
-            이 달 평균 <strong style={{ color: 'var(--ink)' }}>{summary.avg.toFixed(1)}</strong>점 ·{' '}
-            {summary.scored}일 기록
-          </span>
+          {summary.avg !== null && (
+            <span>
+              이 달 평균 <strong style={{ color: 'var(--ink)' }}>{summary.avg.toFixed(1)}</strong>점
+              · {summary.scored}일 기록
+            </span>
+          )}
+          {summary.strengthDays > 0 && (
+            <span>
+              <i className="wo-key wo-strength" />
+              근력 {summary.strengthDays}일
+            </span>
+          )}
+          {summary.runDays > 0 && (
+            <span>
+              <i className="wo-key wo-run" />
+              러닝 {summary.runDays}일
+            </span>
+          )}
         </div>
       )}
 

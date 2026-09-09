@@ -1,4 +1,4 @@
-import type { DayRecord, ISODate } from './types'
+import type { DayRecord, ISODate, Running } from './types'
 import { SNS_APPS } from './types'
 import { weekday } from './date'
 
@@ -16,6 +16,8 @@ export type MetricId =
   | 'sns'
   | 'instagram'
   | 'youtube'
+  | 'run'
+  | 'pace'
 
 export interface MetricDef {
   id: MetricId
@@ -44,6 +46,31 @@ export function formatMinutes(mins: number): string {
   const h = Math.floor(m / 60)
   const rest = m % 60
   return rest === 0 ? `${h}시간` : `${h}시간 ${rest}분`
+}
+
+/** 초를 5'30" 꼴로. 러닝 페이스는 이 표기가 제일 익숙하다. */
+export function formatPace(sec: number): string {
+  const s = Math.round(sec)
+  return `${Math.floor(s / 60)}'${String(s % 60).padStart(2, '0')}"`
+}
+
+/**
+ * 초를 '28분 36초'처럼. 러닝은 초까지 봐야 시계에 찍힌 숫자와 맞아떨어진다.
+ * (SNS 시간을 다루는 formatMinutes는 분에서 반올림해버린다.)
+ */
+export function formatDuration(sec: number): string {
+  const t = Math.max(0, Math.round(sec))
+  const parts: string[] = []
+  if (t >= 3600) parts.push(`${Math.floor(t / 3600)}시간`)
+  if (Math.floor((t % 3600) / 60)) parts.push(`${Math.floor((t % 3600) / 60)}분`)
+  if (t % 60 || parts.length === 0) parts.push(`${t % 60}초`)
+  return parts.join(' ')
+}
+
+/** 거리와 페이스가 다 있을 때만, 실제로 뛴 시간(초). */
+export function runSeconds(running: Running): number | null {
+  if (running.km === null || running.paceSec === null) return null
+  return running.km * running.paceSec
 }
 
 export function snsTotal(day: DayRecord): number | null {
@@ -188,6 +215,24 @@ export const METRICS: MetricDef[] = [
     unit: '',
     get: (d) => d.screenTime.youtube ?? null,
     format: formatMinutes,
+  },
+  {
+    id: 'run',
+    label: '러닝 거리',
+    short: '러닝',
+    color: '#E8B93B',
+    unit: 'km',
+    get: (d) => d.workout.running.km,
+    format: (v) => `${round1(v)}km`,
+  },
+  {
+    id: 'pace',
+    label: '러닝 페이스',
+    short: '페이스',
+    color: '#B8763E',
+    unit: '',
+    get: (d) => d.workout.running.paceSec,
+    format: (v) => `${formatPace(v)}/km`,
   },
 ]
 

@@ -13,7 +13,7 @@ import { StarRating } from '../../components/StarRating'
 import { BulbIcon, GripIcon, PlusIcon, TrashIcon } from '../../components/icons'
 import { useDragOrder } from '../../components/useDragOrder'
 import { useStore } from '../../lib/store'
-import { formatMinutes, snsTotal } from '../../lib/metrics'
+import { formatDuration, formatMinutes, formatPace, runSeconds, snsTotal } from '../../lib/metrics'
 import { newId } from '../../lib/storage'
 import { formatTime } from '../../lib/date'
 import {
@@ -21,9 +21,11 @@ import {
   EVENT_KIND_LABEL,
   INTENSITY_LABEL,
   MEAL_LABELS,
+  RUNNING_PART,
   SNS_APPS,
   PERSON_COLORS,
   WORKOUT_PARTS,
+  isRunning,
   type EventKind,
   type ISODate,
   type Intensity,
@@ -550,6 +552,101 @@ export function IdeaSection({ date }: SectionProps) {
 
 // ── 운동 ─────────────────────────────────────────────────────────────────────
 
+/**
+ * 러닝을 고르면 나오는 칸. 시계나 러닝 앱이 보여주는 그대로
+ * '거리'와 '1km 평균 페이스'를 옮겨 적게 한다.
+ */
+function RunningFields({ date }: SectionProps) {
+  const { getDay, updateDay } = useStore()
+  const { running } = getDay(date).workout
+
+  const patch = (next: Partial<typeof running>) =>
+    updateDay(date, (d) => ({
+      workout: { ...d.workout, running: { ...d.workout.running, ...next } },
+    }))
+
+  // 1km를 1분 안에 뛰는 일은 없으니, 페이스가 60초보다 짧으면 분 칸을 비워둔다.
+  // SNS 시간 칸과 같은 이유다 — 분 칸에 0이 남으면 초만 지워도 기록이 안 지워진다.
+  const mm =
+    running.paceSec === null || running.paceSec < 60
+      ? ''
+      : String(Math.floor(running.paceSec / 60))
+  const ss = running.paceSec === null ? '' : String(running.paceSec % 60)
+
+  const setPace = (m: string, sec: string) => {
+    if (m === '' && sec === '') return patch({ paceSec: null })
+    const total = (Number(m) || 0) * 60 + (Number(sec) || 0)
+    patch({ paceSec: Math.max(0, Math.min(59 * 60 + 59, total)) })
+  }
+
+  const elapsed = runSeconds(running)
+
+  return (
+    <div className="run-box">
+      <span className="run-title">
+        {/* 점 색은 달력에 찍히는 러닝 표시와 같은 색이다 */}
+        <i />
+        러닝
+      </span>
+      <div className="num-row">
+        <span className="num-name">거리</span>
+        <span className="num-inputs">
+          <input
+            className="input"
+            type="number"
+            inputMode="decimal"
+            step="0.1"
+            min={0}
+            placeholder="0.0"
+            aria-label="러닝 거리"
+            value={running.km ?? ''}
+            onChange={(e) =>
+              patch({ km: e.target.value === '' ? null : Math.max(0, Number(e.target.value)) })
+            }
+          />
+          <span className="num-unit">km</span>
+        </span>
+      </div>
+
+      <div className="num-row">
+        <span className="num-name">1km 평균 페이스</span>
+        <span className="num-inputs">
+          <input
+            className="input"
+            type="number"
+            inputMode="numeric"
+            min={0}
+            max={59}
+            placeholder="0"
+            aria-label="평균 페이스 분"
+            value={mm}
+            onChange={(e) => setPace(e.target.value, ss)}
+          />
+          <span className="num-unit">분</span>
+          <input
+            className="input"
+            type="number"
+            inputMode="numeric"
+            min={0}
+            max={59}
+            placeholder="00"
+            aria-label="평균 페이스 초"
+            value={ss}
+            onChange={(e) => setPace(mm, e.target.value)}
+          />
+          <span className="num-unit">초</span>
+        </span>
+      </div>
+
+      {elapsed !== null && (
+        <p className="card-note" style={{ marginTop: 4, textAlign: 'right' }}>
+          걸린 시간 <strong style={{ color: 'var(--ink)' }}>{formatDuration(elapsed)}</strong>
+        </p>
+      )}
+    </div>
+  )
+}
+
 export function WorkoutSection({ date }: SectionProps) {
   const { getDay, updateDay, data, addCustomWorkoutPart } = useStore()
   const { workout } = getDay(date)
@@ -562,15 +659,22 @@ export function WorkoutSection({ date }: SectionProps) {
   )
 
   const togglePart = (part: string) =>
-    updateDay(date, (d) => ({
-      workout: {
-        ...d.workout,
-        did: true,
-        parts: d.workout.parts.includes(part)
-          ? d.workout.parts.filter((p) => p !== part)
-          : [...d.workout.parts, part],
-      },
-    }))
+    updateDay(date, (d) => {
+      const on = d.workout.parts.includes(part)
+      const parts = on ? d.workout.parts.filter((p) => p !== part) : [...d.workout.parts, part]
+      return {
+        workout: {
+          ...d.workout,
+          did: true,
+          parts,
+          // 러닝을 뺐으면 거리·페이스도 같이 지운다. 안 보이는 칸에 숫자가
+          // 남아 있으면 달력 표시와 기록이 어긋난다.
+          running: parts.includes(RUNNING_PART)
+            ? d.workout.running
+            : { km: null, paceSec: null },
+        },
+      }
+    })
 
   const submitPart = () => {
     const clean = newPart.trim()
@@ -588,6 +692,8 @@ export function WorkoutSection({ date }: SectionProps) {
       {workout.did && (workout.parts.length > 0 || workout.intensity) && (
         <span className="dim">
           {workout.parts.length > 0 && ` · ${workout.parts.join(', ')}`}
+          {workout.running.km !== null && ` ${workout.running.km}km`}
+          {workout.running.paceSec !== null && ` ${formatPace(workout.running.paceSec)}`}
           {workout.intensity && ` · ${INTENSITY_LABEL[workout.intensity]}`}
         </span>
       )}
@@ -606,7 +712,13 @@ export function WorkoutSection({ date }: SectionProps) {
           updateDay(date, (d) => ({
             workout:
               v === 'no'
-                ? { ...d.workout, did: false, parts: [], intensity: null }
+                ? {
+                    ...d.workout,
+                    did: false,
+                    parts: [],
+                    intensity: null,
+                    running: { km: null, paceSec: null },
+                  }
                 : { ...d.workout, did: v === null ? null : true },
           }))
         }
@@ -650,6 +762,8 @@ export function WorkoutSection({ date }: SectionProps) {
               )}
             </div>
           </div>
+
+          {isRunning(workout.parts) && <RunningFields date={date} />}
 
           <div className="field" style={{ marginTop: 14 }}>
             <span className="field-label">강도</span>
@@ -1167,12 +1281,12 @@ function ScreenTimeRow({
   }
 
   return (
-    <div className="sns-row">
-      <span className="sns-name">
+    <div className="num-row">
+      <span className="num-name">
         <i style={{ background: app.color }} />
         {app.label}
       </span>
-      <span className="sns-inputs">
+      <span className="num-inputs">
         <input
           className="input"
           type="number"
@@ -1184,7 +1298,7 @@ function ScreenTimeRow({
           value={h}
           onChange={(e) => set(e.target.value, m)}
         />
-        <span className="sns-unit">시간</span>
+        <span className="num-unit">시간</span>
         <input
           className="input"
           type="number"
@@ -1196,7 +1310,7 @@ function ScreenTimeRow({
           value={m}
           onChange={(e) => set(h, e.target.value)}
         />
-        <span className="sns-unit">분</span>
+        <span className="num-unit">분</span>
       </span>
     </div>
   )
