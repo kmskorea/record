@@ -23,7 +23,7 @@ import {
   MEAL_LABELS,
   RUNNING_PART,
   SNS_APPS,
-  PERSON_COLORS,
+  PROFILE_COLORS,
   WORKOUT_PARTS,
   isRunning,
   type EventKind,
@@ -299,7 +299,7 @@ export function TodoSection({ date, onOpenPerson }: SectionProps & { onOpenPerso
                       <span
                         className="avatar"
                         data-selected={active}
-                        style={{ background: PERSON_COLORS[p.colorIndex % PERSON_COLORS.length] }}
+                        style={{ background: PROFILE_COLORS[p.colorIndex % PROFILE_COLORS.length] }}
                       >
                         {initial(p.name)}
                       </span>
@@ -1103,7 +1103,7 @@ export function PeopleSection({
                 <span
                   className="avatar"
                   data-selected={active}
-                  style={{ background: PERSON_COLORS[p.colorIndex % PERSON_COLORS.length] }}
+                  style={{ background: PROFILE_COLORS[p.colorIndex % PROFILE_COLORS.length] }}
                 >
                   {initial(p.name)}
                 </span>
@@ -1167,7 +1167,7 @@ export function PeopleSection({
                   onClick={() => onOpenPerson?.(it.personId)}
                   style={{
                     background: person
-                      ? PERSON_COLORS[person.colorIndex % PERSON_COLORS.length]
+                      ? PROFILE_COLORS[person.colorIndex % PROFILE_COLORS.length]
                       : 'var(--ink-3)',
                     cursor: onOpenPerson ? 'pointer' : 'default',
                   }}
@@ -1209,6 +1209,248 @@ export function PeopleSection({
         <Empty>사람을 등록하면 그 사람과 있었던 일을 모아볼 수 있어요.</Empty>
       )}
     </Card>
+  )
+}
+
+// ── 독서 ─────────────────────────────────────────────────────────────────────
+
+export function ReadingSection({
+  date,
+  onOpenBook,
+}: SectionProps & { onOpenBook?: (id: string) => void }) {
+  const { getDay, updateDay, data, addBook } = useStore()
+  const day = getDay(date)
+  const [bookId, setBookId] = useState<string | null>(null)
+  const [pages, setPages] = useState('')
+  const [quote, setQuote] = useState('')
+  const [thought, setThought] = useState('')
+  const [creating, setCreating] = useState(false)
+  const [title, setTitle] = useState('')
+  const [author, setAuthor] = useState('')
+
+  const bookById = useMemo(
+    () => Object.fromEntries(data.books.map((b) => [b.id, b])),
+    [data.books],
+  )
+
+  const reset = () => {
+    setBookId(null)
+    setPages('')
+    setQuote('')
+    setThought('')
+  }
+
+  const submit = () => {
+    if (!bookId) return
+    const p = Number(pages)
+    const entry = {
+      id: newId(),
+      bookId,
+      pages: pages.trim() === '' || !Number.isFinite(p) || p <= 0 ? null : p,
+      quote: quote.trim(),
+      thought: thought.trim(),
+      at: Date.now(),
+    }
+    // 셋 다 비면 남길 게 없다. 책만 고르고 아무것도 안 적은 상태다.
+    if (entry.pages === null && !entry.quote && !entry.thought) return
+    updateDay(date, (d) => ({ readings: [entry, ...d.readings] }))
+    reset()
+  }
+
+  const createBook = () => {
+    if (!title.trim()) return
+    const book = addBook(title, author)
+    setBookId(book.id)
+    setTitle('')
+    setAuthor('')
+    setCreating(false)
+  }
+
+  const totalPages = day.readings.reduce((sum, r) => sum + (r.pages ?? 0), 0)
+  const titles = [...new Set(day.readings.map((r) => bookById[r.bookId]?.title).filter(Boolean))]
+
+  const summary =
+    day.readings.length === 0 ? (
+      '—'
+    ) : (
+      <>
+        {titles.join(', ') || `${day.readings.length}개`}
+        {totalPages > 0 && <span className="dim"> · {totalPages}쪽</span>}
+      </>
+    )
+
+  return (
+    <CollapsibleCard
+      title="독서"
+      mark="var(--brown)"
+      filled={day.readings.length > 0}
+      // 읽는 날보다 안 읽는 날이 많다. 매일 펼쳐 두면 지나치는 칸이 된다.
+      alwaysCollapsed
+      summary={summary}
+    >
+      {creating ? (
+        <div className="stack">
+          <input
+            className="input"
+            autoFocus
+            placeholder="책 이름"
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+          />
+          <input
+            className="input"
+            placeholder="지은이 (선택)"
+            value={author}
+            onChange={(e) => setAuthor(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') createBook()
+            }}
+          />
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button type="button" className="btn primary" onClick={createBook}>
+              등록
+            </button>
+            <button type="button" className="btn ghost" onClick={() => setCreating(false)}>
+              취소
+            </button>
+          </div>
+        </div>
+      ) : (
+        <div className="person-scroll">
+          {data.books.map((b) => {
+            const active = bookId === b.id
+            return (
+              <button
+                key={b.id}
+                type="button"
+                className="person-pill"
+                aria-pressed={active}
+                onClick={() => setBookId(active ? null : b.id)}
+              >
+                <span
+                  className="avatar book"
+                  data-selected={active}
+                  style={{ background: PROFILE_COLORS[b.colorIndex % PROFILE_COLORS.length] }}
+                >
+                  {initial(b.title)}
+                </span>
+                <span className="name" style={{ color: active ? 'var(--ink)' : 'var(--ink-3)' }}>
+                  {b.title}
+                </span>
+              </button>
+            )
+          })}
+          <button type="button" className="person-pill" onClick={() => setCreating(true)}>
+            <span
+              className="avatar book"
+              style={{
+                background: 'var(--surface-2)',
+                color: 'var(--ink-3)',
+                border: '1.5px dashed var(--line-strong)',
+              }}
+            >
+              <PlusIcon className="plus-sm" />
+            </span>
+            <span className="name" style={{ color: 'var(--ink-3)' }}>
+              새 책
+            </span>
+          </button>
+        </div>
+      )}
+
+      {bookId && !creating && (
+        <div className="stack" style={{ marginTop: 12 }}>
+          <div className="num-row">
+            <span className="num-name">읽은 쪽수</span>
+            <span className="num-inputs">
+              <input
+                className="input"
+                type="number"
+                inputMode="numeric"
+                min={0}
+                placeholder="0"
+                aria-label="읽은 쪽수"
+                value={pages}
+                onChange={(e) => setPages(e.target.value)}
+              />
+              <span className="num-unit">쪽</span>
+            </span>
+          </div>
+          <label className="field">
+            <span className="field-label">인상적인 구절</span>
+            <textarea
+              className="textarea"
+              style={{ minHeight: 76 }}
+              placeholder="옮겨 적고 싶은 문장"
+              value={quote}
+              onChange={(e) => setQuote(e.target.value)}
+            />
+          </label>
+          <label className="field">
+            <span className="field-label">그에 대한 나의 생각</span>
+            <textarea
+              className="textarea"
+              style={{ minHeight: 76 }}
+              placeholder="왜 걸렸는지, 무엇이 떠올랐는지"
+              value={thought}
+              onChange={(e) => setThought(e.target.value)}
+            />
+          </label>
+          <button
+            type="button"
+            className="btn primary block"
+            onClick={submit}
+            disabled={!pages.trim() && !quote.trim() && !thought.trim()}
+          >
+            기록
+          </button>
+        </div>
+      )}
+
+      {day.readings.length > 0 && (
+        <div className="stack" style={{ marginTop: 14 }}>
+          {day.readings.map((r) => {
+            const book = bookById[r.bookId]
+            return (
+              <div key={r.id} className="note-item">
+                <button
+                  type="button"
+                  className="avatar sm book"
+                  onClick={() => onOpenBook?.(r.bookId)}
+                  style={{
+                    background: book
+                      ? PROFILE_COLORS[book.colorIndex % PROFILE_COLORS.length]
+                      : 'var(--ink-3)',
+                    cursor: onOpenBook ? 'pointer' : 'default',
+                  }}
+                  aria-label={`${book?.title ?? '알 수 없음'} 책 열기`}
+                >
+                  {initial(book?.title ?? '?')}
+                </button>
+                <div className="body">
+                  <div style={{ fontSize: 13, fontWeight: 700 }}>
+                    {book?.title ?? '삭제된 책'}
+                    {r.pages !== null && <span className="dim"> · {r.pages}쪽</span>}
+                  </div>
+                  {r.quote && <p className="reading-quote">{r.quote}</p>}
+                  {r.thought && <p>{r.thought}</p>}
+                </div>
+                <button
+                  type="button"
+                  className="icon-btn plain"
+                  aria-label="독서 기록 삭제"
+                  onClick={() =>
+                    updateDay(date, (d) => ({ readings: d.readings.filter((x) => x.id !== r.id) }))
+                  }
+                >
+                  <TrashIcon />
+                </button>
+              </div>
+            )
+          })}
+        </div>
+      )}
+    </CollapsibleCard>
   )
 }
 

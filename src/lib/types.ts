@@ -28,7 +28,7 @@ export interface Person {
   name: string
   /** 자유 입력. '대학교 친구', '가족', '직장 동료' 등 사용자가 알아서 적는다. */
   relation: string
-  /** 프로필 색상 인덱스 (PERSON_COLORS 참조) */
+  /** 프로필 색상 인덱스 (PROFILE_COLORS 참조) */
   colorIndex: number
   createdAt: number
   /** 기기 간 최신본 판정 기준 */
@@ -40,6 +40,35 @@ export interface Interaction {
   id: string
   personId: string
   note: string
+  at: number
+}
+
+/**
+ * 읽고 있는 책. 사람과 같은 취급이다 — 날짜별 기록이 여기에 매달리고,
+ * 검색에서 하나로 모아 볼 수 있어야 하므로 따로 객체를 둔다.
+ */
+export interface Book {
+  id: string
+  title: string
+  /** 자유 입력. 지은이 */
+  author: string
+  /** 프로필 색상 인덱스 (PROFILE_COLORS 참조) */
+  colorIndex: number
+  createdAt: number
+  /** 기기 간 최신본 판정 기준 */
+  updatedAt: number
+}
+
+/** 특정 날짜에 특정 책을 읽은 기록. */
+export interface Reading {
+  id: string
+  bookId: string
+  /** 그날 읽은 쪽수 */
+  pages: number | null
+  /** 인상적인 구절 */
+  quote: string
+  /** 그 구절에 대한 내 생각 */
+  thought: string
   at: number
 }
 
@@ -168,6 +197,8 @@ export interface DayRecord {
   weight: number | null
   diet: Diet
   interactions: Interaction[]
+  /** 그날 읽은 기록. 안 읽은 날이 더 많아서 대개 비어 있다. */
+  readings: Reading[]
   reflection: string
   /** 하루를 매기는 최종 점수. 0~5, 0.5 단위. 달력 색의 기준이다. */
   score: number | null
@@ -197,6 +228,7 @@ export interface AppData {
   version: number
   days: Record<ISODate, DayRecord>
   people: Person[]
+  books: Book[]
   notifications: NotificationSettings
   /** 사용자가 직접 추가한 운동 부위 */
   customWorkoutParts: string[]
@@ -207,6 +239,8 @@ export interface AppData {
    * '지웠다'는 사실 자체를 기록해서 같이 퍼뜨려야 한다.
    */
   deletedPeople: Record<string, number>
+  /** 지운 책의 묘비. 사람과 같은 이유다. */
+  deletedBooks: Record<string, number>
   /** 알림 시각·운동 부위 같은 설정의 최종 수정 시각 */
   settingsUpdatedAt: number
 }
@@ -236,8 +270,8 @@ export const INTENSITY_LABEL: Record<Intensity, string> = {
   high: '높음',
 }
 
-/** 사람 프로필에 돌아가며 배정되는 색. */
-export const PERSON_COLORS = [
+/** 사람·책 프로필에 돌아가며 배정되는 색. */
+export const PROFILE_COLORS = [
   '#E4572E',
   '#3D5AFE',
   '#3E8E7E',
@@ -265,6 +299,7 @@ export function emptyDay(date: ISODate): DayRecord {
     weight: null,
     diet: { meals: [], protein: null, water: null, creatine: null, sugar: null },
     interactions: [],
+    readings: [],
     reflection: '',
     score: null,
     scoreNote: '',

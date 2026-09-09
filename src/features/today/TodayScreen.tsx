@@ -5,6 +5,7 @@ import {
   DietSection,
   IdeaSection,
   PeopleSection,
+  ReadingSection,
   ReflectionSection,
   ScoreSection,
   ScreenTimeSection,
@@ -19,7 +20,13 @@ import { SyncBadge } from '../../components/SyncBadge'
 import { useStore } from '../../lib/store'
 import { formatKorean } from '../../lib/date'
 
-export function TodayScreen({ onOpenPerson }: { onOpenPerson: (id: string) => void }) {
+export function TodayScreen({
+  onOpenPerson,
+  onOpenBook,
+}: {
+  onOpenPerson: (id: string) => void
+  onOpenBook: (id: string) => void
+}) {
   const { today, sync } = useStore()
   const [settingsOpen, setSettingsOpen] = useState(false)
 
@@ -61,6 +68,7 @@ export function TodayScreen({ onOpenPerson }: { onOpenPerson: (id: string) => vo
         <BodySection date={today} />
         <DietSection date={today} />
         <PeopleSection date={today} onOpenPerson={onOpenPerson} />
+        <ReadingSection date={today} onOpenBook={onOpenBook} />
         <ReflectionSection date={today} />
       </div>
 

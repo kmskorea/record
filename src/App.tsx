@@ -3,6 +3,7 @@ import { CalendarScreen } from './features/calendar/CalendarScreen'
 import { TodayScreen } from './features/today/TodayScreen'
 import { SearchScreen } from './features/search/SearchScreen'
 import { PersonSheet } from './features/search/PersonSheet'
+import { BookSheet } from './features/search/BookSheet'
 import { DayDetailSheet } from './features/calendar/DayDetailSheet'
 import { CalendarIcon, SearchIcon, TodayIcon } from './components/icons'
 import { useStore } from './lib/store'
@@ -21,15 +22,22 @@ export function App() {
   const { data, markNotificationFired } = useStore()
   const [tab, setTab] = useState<Tab>('today')
   const [personId, setPersonId] = useState<string | null>(null)
+  const [bookId, setBookId] = useState<string | null>(null)
   const [dayDate, setDayDate] = useState<ISODate | null>(null)
 
   useNotificationScheduler(data.notifications, markNotificationFired)
 
   return (
     <div className="app">
-      {tab === 'flow' && <CalendarScreen onOpenPerson={setPersonId} />}
-      {tab === 'today' && <TodayScreen onOpenPerson={setPersonId} />}
-      {tab === 'search' && <SearchScreen onOpenPerson={setPersonId} onOpenDate={setDayDate} />}
+      {tab === 'flow' && <CalendarScreen onOpenPerson={setPersonId} onOpenBook={setBookId} />}
+      {tab === 'today' && <TodayScreen onOpenPerson={setPersonId} onOpenBook={setBookId} />}
+      {tab === 'search' && (
+        <SearchScreen
+          onOpenPerson={setPersonId}
+          onOpenBook={setBookId}
+          onOpenDate={setDayDate}
+        />
+      )}
 
       <nav className="nav" role="tablist" aria-label="주요 메뉴">
         {TABS.map(({ id, label, Icon }) => (
@@ -58,6 +66,17 @@ export function App() {
         />
       )}
 
+      {bookId && (
+        <BookSheet
+          bookId={bookId}
+          onClose={() => setBookId(null)}
+          onOpenDate={(date) => {
+            setBookId(null)
+            setDayDate(date)
+          }}
+        />
+      )}
+
       {dayDate && (
         <DayDetailSheet
           date={dayDate}
@@ -65,6 +84,10 @@ export function App() {
           onOpenPerson={(id) => {
             setDayDate(null)
             setPersonId(id)
+          }}
+          onOpenBook={(id) => {
+            setDayDate(null)
+            setBookId(id)
           }}
         />
       )}

@@ -29,6 +29,17 @@ create table if not exists public.people (
   primary key (user_id, id)
 );
 
+-- 책. 사람과 같은 규칙으로 다룹니다(지운 뒤에도 줄을 남기고 표시만).
+create table if not exists public.books (
+  user_id uuid not null references auth.users (id) on delete cascade,
+  id text not null,
+  data jsonb not null,
+  deleted boolean not null default false,
+  updated_at bigint not null,
+  server_updated_at timestamptz not null default now(),
+  primary key (user_id, id)
+);
+
 create table if not exists public.settings (
   user_id uuid primary key references auth.users (id) on delete cascade,
   data jsonb not null,
@@ -38,6 +49,7 @@ create table if not exists public.settings (
 
 create index if not exists days_sync_idx on public.days (user_id, server_updated_at);
 create index if not exists people_sync_idx on public.people (user_id, server_updated_at);
+create index if not exists books_sync_idx on public.books (user_id, server_updated_at);
 
 -- 어떤 경로로 쓰든 서버 시각이 항상 갱신되도록 트리거로 박아둔다.
 create or replace function public.touch_server_updated_at()
@@ -58,6 +70,10 @@ drop trigger if exists people_touch on public.people;
 create trigger people_touch before insert or update on public.people
   for each row execute function public.touch_server_updated_at();
 
+drop trigger if exists books_touch on public.books;
+create trigger books_touch before insert or update on public.books
+  for each row execute function public.touch_server_updated_at();
+
 drop trigger if exists settings_touch on public.settings;
 create trigger settings_touch before insert or update on public.settings
   for each row execute function public.touch_server_updated_at();
@@ -65,6 +81,7 @@ create trigger settings_touch before insert or update on public.settings
 -- 내 기록은 나만 읽고 쓴다.
 alter table public.days enable row level security;
 alter table public.people enable row level security;
+alter table public.books enable row level security;
 alter table public.settings enable row level security;
 
 drop policy if exists "own days" on public.days;
@@ -73,6 +90,10 @@ create policy "own days" on public.days
 
 drop policy if exists "own people" on public.people;
 create policy "own people" on public.people
+  for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
+
+drop policy if exists "own books" on public.books;
+create policy "own books" on public.books
   for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
 
 drop policy if exists "own settings" on public.settings;
@@ -121,6 +142,27 @@ begin
     set data = case when excluded.updated_at > p.updated_at then excluded.data else p.data end,
         deleted = case when excluded.updated_at > p.updated_at then excluded.deleted else p.deleted end,
         updated_at = greatest(excluded.updated_at, p.updated_at);
+end;
+$$;
+
+create or replace function public.merge_books(rows jsonb)
+returns void
+language plpgsql
+security invoker
+as $$
+begin
+  insert into public.books as b (user_id, id, data, deleted, updated_at)
+  select
+    auth.uid(),
+    r ->> 'id',
+    r -> 'data',
+    coalesce((r ->> 'deleted')::boolean, false),
+    (r ->> 'updated_at')::bigint
+  from jsonb_array_elements(rows) as r
+  on conflict (user_id, id) do update
+    set data = case when excluded.updated_at > b.updated_at then excluded.data else b.data end,
+        deleted = case when excluded.updated_at > b.updated_at then excluded.deleted else b.deleted end,
+        updated_at = greatest(excluded.updated_at, b.updated_at);
 end;
 $$;
 

@@ -7,7 +7,13 @@ import { useStore } from '../../lib/store'
 import type { MetricId } from '../../lib/metrics'
 import type { ISODate } from '../../lib/types'
 
-export function CalendarScreen({ onOpenPerson }: { onOpenPerson: (id: string) => void }) {
+export function CalendarScreen({
+  onOpenPerson,
+  onOpenBook,
+}: {
+  onOpenPerson: (id: string) => void
+  onOpenBook: (id: string) => void
+}) {
   const { data, today } = useStore()
   const [anchor, setAnchor] = useState<ISODate>(today)
   const [selected, setSelected] = useState<ISODate | null>(null)
@@ -63,6 +69,10 @@ export function CalendarScreen({ onOpenPerson }: { onOpenPerson: (id: string) =>
           onOpenPerson={(id) => {
             setSelected(null)
             onOpenPerson(id)
+          }}
+          onOpenBook={(id) => {
+            setSelected(null)
+            onOpenBook(id)
           }}
         />
       )}

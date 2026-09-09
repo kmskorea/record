@@ -15,6 +15,7 @@
   --yellow: #e8b93b;
   --green: #3e8e7e;
   --purple: #8e6bb5;
+  --brown: #a9713c;
 
   --on-accent: #fffdf7;
   --shadow: 0 1px 2px rgba(23, 21, 15, 0.04), 0 8px 24px rgba(23, 21, 15, 0.06);
@@ -48,6 +49,7 @@
     --yellow: #f0c54f;
     --green: #55a795;
     --purple: #a688cc;
+    --brown: #c78e58;
     --on-accent: #14130f;
     --shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 8px 24px rgba(0, 0, 0, 0.35);
     --shadow-lift: 0 2px 6px rgba(0, 0, 0, 0.4), 0 18px 44px rgba(0, 0, 0, 0.5);
@@ -938,6 +940,15 @@ ul {
   display: grid;
   grid-template-columns: repeat(2, 1fr);
   gap: 10px;
+}
+
+/* 세 칸짜리(책 프로필)는 2+1로 접히면 어색하다. 한 줄에 나란히 둔다. */
+.tiles.three {
+  grid-template-columns: repeat(3, 1fr);
+}
+
+.tiles.three .value {
+  font-size: 22px;
 }
 
 .tile {
@@ -2015,6 +2026,20 @@ input[type='number'] {
   font-size: 12.5px;
   font-weight: 600;
   color: var(--ink-3);
+}
+
+/* ── 독서 ─────────────────────────────────────────────────────────────────── */
+/* 책은 사람이 아니다. 같은 자리에 나란히 놓이므로 동그라미 대신
+   책등에 가까운 모서리로 한눈에 구분되게 한다. */
+.avatar.book {
+  border-radius: 6px;
+}
+
+.reading-quote {
+  border-left: 2.5px solid var(--brown);
+  padding-left: 10px;
+  font-style: italic;
+  color: var(--ink-2);
 }
 
 /* 부위에서 러닝을 골랐을 때 딸려 나오는 거리·페이스 칸 */

@@ -1,5 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
-import type { AppData, DayRecord, ISODate, NotificationSettings, Person } from './types'
+import type { AppData, Book, DayRecord, ISODate, NotificationSettings, Person } from './types'
 import { normalizeDay, type SyncState } from './storage'
 
 export type SyncPhase = 'unconfigured' | 'signed-out' | 'idle' | 'syncing' | 'offline' | 'error'
@@ -10,14 +10,32 @@ export interface SyncReport {
   /** 아직 서버에 못 올린 건수 */
   pending: number
   error: string | null
+  /** 서버에 books 테이블이 아직 없다. schema.sql을 다시 실행해야 한다. */
+  schemaOutdated: boolean
 }
 
 export function pendingCount(state: SyncState): number {
   return (
     Object.keys(state.dirtyDays).length +
     Object.keys(state.dirtyPeople).length +
+    Object.keys(state.dirtyBooks).length +
     (state.settingsDirty ? 1 : 0)
   )
+}
+
+/**
+ * books 테이블·함수가 아직 없는 계정인지 본다.
+ *
+ * 독서 기능을 나중에 붙였으므로, 쓰던 사람이 앱만 새로 받고 Supabase 스키마를
+ * 아직 다시 실행하지 않은 시기가 반드시 생긴다. 그때 예외를 그냥 위로 던지면
+ * 하루 기록·사람까지 통째로 동기화가 멈춘다. 책만 미루고 나머지는 계속 오가게
+ * 하려고 이 오류만 따로 알아본다.
+ */
+function isMissingSchema(error: { code?: string; message?: string } | null): boolean {
+  if (!error) return false
+  // 42P01 테이블 없음, 42883 함수 없음, PGRST202/205 PostgREST 스키마 캐시에 없음
+  if (['42P01', '42883', 'PGRST202', 'PGRST205'].includes(error.code ?? '')) return true
+  return /could not find (the )?(table|function)/i.test(error.message ?? '')
 }
 
 interface DayRow {
@@ -30,6 +48,14 @@ interface DayRow {
 interface PersonRow {
   id: string
   data: Person
+  deleted: boolean
+  updated_at: number
+  server_updated_at: string
+}
+
+interface BookRow {
+  id: string
+  data: Book
   deleted: boolean
   updated_at: number
   server_updated_at: string
@@ -59,6 +85,8 @@ export interface SyncOutcome {
   state: SyncState
   /** 서버에서 받아와 로컬이 실제로 바뀌었는지 */
   changed: boolean
+  /** books 테이블이 없어서 독서 기록만 못 올렸는지 */
+  schemaOutdated: boolean
 }
 
 /**
@@ -135,6 +163,31 @@ export async function syncOnce(
     nextState.settingsDirty = false
   }
 
+  // 책은 맨 뒤에 올린다. 스키마가 아직 없는 계정이라도 앞의 것들은
+  // 이미 서버에 닿은 뒤라 하루 기록이 발이 묶이지 않는다.
+  let schemaOutdated = false
+  const dirtyBooks = Object.keys(state.dirtyBooks)
+  if (dirtyBooks.length > 0) {
+    const byId = new Map(next.books.map((b) => [b.id, b]))
+    const rows = dirtyBooks.map((id) => {
+      const book = byId.get(id)
+      if (book) {
+        return { id, data: book, deleted: false, updated_at: book.updatedAt || Date.now() }
+      }
+      return { id, data: { id }, deleted: true, updated_at: next.deletedBooks[id] ?? Date.now() }
+    })
+    const { error } = await client.rpc('merge_books', { rows })
+    if (error && !isMissingSchema(error)) throw error
+    if (error) {
+      // 못 올렸으니 표시를 지우지 않는다. 스키마를 실행하면 그대로 올라간다.
+      schemaOutdated = true
+    } else {
+      const remaining = { ...nextState.dirtyBooks }
+      for (const id of dirtyBooks) delete remaining[id]
+      nextState.dirtyBooks = remaining
+    }
+  }
+
   // ── 2. 내려받기 ────────────────────────────────────────────────────────────
   // 커서에서 살짝 뒤로 물러나 조회한다. 몇 건 겹쳐 받는 편이,
   // 시계 오차로 한 건이라도 놓치는 것보다 낫다.
@@ -157,6 +210,12 @@ export async function syncOnce(
     .select('data, updated_at')
     .maybeSingle()
   if (settingsErr) throw settingsErr
+
+  let bookQuery = client.from('books').select('id, data, deleted, updated_at, server_updated_at')
+  if (since) bookQuery = bookQuery.gt('server_updated_at', since)
+  const { data: bookRows, error: bookErr } = await bookQuery
+  if (bookErr && !isMissingSchema(bookErr)) throw bookErr
+  if (bookErr) schemaOutdated = true
 
   // ── 3. 병합 ────────────────────────────────────────────────────────────────
   let changed = false
@@ -210,6 +269,41 @@ export async function syncOnce(
     }
   }
 
+  // 책은 사람과 같은 규칙으로 합친다. 지운 것은 묘비를 남기고,
+  // 서버에 없다는 이유만으로 로컬에서 지우지 않는다.
+  const books = [...next.books]
+  const deletedBooks = { ...next.deletedBooks }
+  const bookIndex = new Map(books.map((b, i) => [b.id, i]))
+  for (const row of (bookRows ?? []) as BookRow[]) {
+    if (row.server_updated_at && (!cursor || row.server_updated_at > cursor)) {
+      cursor = row.server_updated_at
+    }
+    if (nextState.dirtyBooks[row.id]) continue
+    const at = bookIndex.get(row.id)
+    const localAt = (at === undefined ? undefined : books[at]?.updatedAt) ?? deletedBooks[row.id] ?? 0
+    if (row.updated_at <= localAt) continue
+
+    if (row.deleted) {
+      if (at !== undefined) {
+        books.splice(at, 1)
+        bookIndex.clear()
+        books.forEach((b, i) => bookIndex.set(b.id, i))
+        changed = true
+      }
+      deletedBooks[row.id] = row.updated_at
+    } else {
+      const book: Book = { ...row.data, id: row.id, updatedAt: row.updated_at }
+      if (at === undefined) {
+        bookIndex.set(row.id, books.length)
+        books.push(book)
+      } else {
+        books[at] = book
+      }
+      delete deletedBooks[row.id]
+      changed = true
+    }
+  }
+
   let notifications = next.notifications
   let customWorkoutParts = next.customWorkoutParts
   let timeCategories = next.timeCategories
@@ -241,7 +335,9 @@ export async function syncOnce(
     ...next,
     days,
     people,
+    books,
     deletedPeople,
+    deletedBooks,
     notifications,
     customWorkoutParts,
     timeCategories,
@@ -249,7 +345,7 @@ export async function syncOnce(
   }
   nextState = { ...nextState, cursor, lastSyncedAt: Date.now() }
 
-  return { data: next, state: nextState, changed }
+  return { data: next, state: nextState, changed, schemaOutdated }
 }
 
 /**
@@ -262,5 +358,8 @@ export function markEverythingDirty(data: AppData, state: SyncState): SyncState 
   const dirtyPeople: Record<string, true> = { ...state.dirtyPeople }
   for (const person of data.people) dirtyPeople[person.id] = true
   for (const id of Object.keys(data.deletedPeople)) dirtyPeople[id] = true
-  return { ...state, dirtyDays, dirtyPeople, settingsDirty: true }
+  const dirtyBooks: Record<string, true> = { ...state.dirtyBooks }
+  for (const book of data.books) dirtyBooks[book.id] = true
+  for (const id of Object.keys(data.deletedBooks)) dirtyBooks[id] = true
+  return { ...state, dirtyDays, dirtyPeople, dirtyBooks, settingsDirty: true }
 }

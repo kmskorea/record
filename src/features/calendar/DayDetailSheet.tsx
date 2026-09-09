@@ -7,6 +7,7 @@ import {
   DietSection,
   IdeaSection,
   PeopleSection,
+  ReadingSection,
   ReflectionSection,
   ScoreSection,
   ScreenTimeSection,
@@ -23,10 +24,12 @@ export function DayDetailSheet({
   date,
   onClose,
   onOpenPerson,
+  onOpenBook,
 }: {
   date: ISODate
   onClose: () => void
   onOpenPerson: (id: string) => void
+  onOpenBook: (id: string) => void
 }) {
   const { getDay } = useStore()
   const day = getDay(date)
@@ -87,6 +90,7 @@ export function DayDetailSheet({
           <BodySection date={date} />
           <DietSection date={date} />
           <PeopleSection date={date} onOpenPerson={onOpenPerson} />
+          <ReadingSection date={date} onOpenBook={onOpenBook} />
           <ReflectionSection date={date} />
           <TimeUseSection date={date} />
           <ScreenTimeSection date={date} />
