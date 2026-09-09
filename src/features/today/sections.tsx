@@ -13,6 +13,7 @@ import { StarRating } from '../../components/StarRating'
 import { BulbIcon, GripIcon, PlusIcon, TrashIcon } from '../../components/icons'
 import { useDragOrder } from '../../components/useDragOrder'
 import { useStore } from '../../lib/store'
+import { formatMinutes, snsTotal } from '../../lib/metrics'
 import { newId } from '../../lib/storage'
 import { formatTime } from '../../lib/date'
 import {
@@ -20,6 +21,7 @@ import {
   EVENT_KIND_LABEL,
   INTENSITY_LABEL,
   MEAL_LABELS,
+  SNS_APPS,
   PERSON_COLORS,
   WORKOUT_PARTS,
   type EventKind,
@@ -1137,5 +1139,103 @@ export function ScoreSection({ date }: SectionProps) {
         />
       </label>
     </Card>
+  )
+}
+
+// ── SNS 사용 시간 ────────────────────────────────────────────────────────────
+
+/** 앱 하나의 시·분 입력. 스크린 타임이 '1시간 23분'으로 나오니 그대로 받는다. */
+function ScreenTimeRow({
+  app,
+  minutes,
+  onChange,
+}: {
+  app: (typeof SNS_APPS)[number]
+  minutes: number | undefined
+  onChange: (v: number | null) => void
+}) {
+  // 한 시간이 안 되면 시간 칸은 비워둔다. '0시간 45분'이 아니라 '45분'으로
+  // 읽히는 게 자연스럽고, 두 칸을 다 비워 기록을 지우는 것도 가능해진다.
+  // (시간 칸에 0이 남으면 분만 지워도 '0분 기록'으로 남아버린다.)
+  const h = minutes === undefined || minutes < 60 ? '' : String(Math.floor(minutes / 60))
+  const m = minutes === undefined ? '' : String(minutes % 60)
+
+  const set = (hours: string, mins: string) => {
+    if (hours === '' && mins === '') return onChange(null)
+    const total = (Number(hours) || 0) * 60 + (Number(mins) || 0)
+    onChange(Math.max(0, Math.min(24 * 60, total)))
+  }
+
+  return (
+    <div className="sns-row">
+      <span className="sns-name">
+        <i style={{ background: app.color }} />
+        {app.label}
+      </span>
+      <span className="sns-inputs">
+        <input
+          className="input"
+          type="number"
+          inputMode="numeric"
+          min={0}
+          max={24}
+          placeholder="0"
+          aria-label={`${app.label} 시간`}
+          value={h}
+          onChange={(e) => set(e.target.value, m)}
+        />
+        <span className="sns-unit">시간</span>
+        <input
+          className="input"
+          type="number"
+          inputMode="numeric"
+          min={0}
+          max={59}
+          placeholder="0"
+          aria-label={`${app.label} 분`}
+          value={m}
+          onChange={(e) => set(h, e.target.value)}
+        />
+        <span className="sns-unit">분</span>
+      </span>
+    </div>
+  )
+}
+
+export function ScreenTimeSection({ date }: SectionProps) {
+  const { getDay, updateDay } = useStore()
+  const day = getDay(date)
+  const total = snsTotal(day)
+
+  return (
+    <CollapsibleCard
+      title="SNS 사용 시간"
+      mark="var(--purple)"
+      filled={total !== null}
+      summary={total === null ? '—' : formatMinutes(total)}
+    >
+      <div className="stack">
+        {SNS_APPS.map((app) => (
+          <ScreenTimeRow
+            key={app.id}
+            app={app}
+            minutes={day.screenTime[app.id]}
+            onChange={(v) =>
+              updateDay(date, (d) => {
+                const next = { ...d.screenTime }
+                if (v === null) delete next[app.id]
+                else next[app.id] = v
+                return { screenTime: next }
+              })
+            }
+          />
+        ))}
+      </div>
+      {total !== null && (
+        <p className="card-note" style={{ marginTop: 12, textAlign: 'right' }}>
+          합계 <strong style={{ color: 'var(--ink)' }}>{formatMinutes(total)}</strong>
+        </p>
+      )}
+    </CollapsibleCard>
   )
 }

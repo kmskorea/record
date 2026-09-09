@@ -1,4 +1,5 @@
 import type { DayRecord, ISODate } from './types'
+import { SNS_APPS } from './types'
 import { weekday } from './date'
 
 export type MetricId =
@@ -12,6 +13,9 @@ export type MetricId =
   | 'water'
   | 'creatine'
   | 'sugar'
+  | 'sns'
+  | 'instagram'
+  | 'youtube'
 
 export interface MetricDef {
   id: MetricId
@@ -19,6 +23,12 @@ export interface MetricDef {
   short: string
   color: string
   unit: string
+  /**
+   * 다른 지표를 더해서 만든 값.
+   * '발견'에서 뺀다. 합계와 그 재료가 같이 움직이는 건 당연해서,
+   * 알려줘도 아무 도움이 안 되고 진짜 발견을 밀어낸다.
+   */
+  derived?: boolean
   /** 고정 축 범위. 없으면 화면에 보이는 데이터로 자동 계산한다(몸무게 등). */
   domain?: [number, number]
   get(day: DayRecord): number | null
@@ -26,6 +36,22 @@ export interface MetricDef {
 }
 
 const round1 = (v: number) => (Math.round(v * 10) / 10).toString()
+
+/** 분을 '1시간 23분'처럼 읽기 좋게. */
+export function formatMinutes(mins: number): string {
+  const m = Math.round(mins)
+  if (m < 60) return `${m}분`
+  const h = Math.floor(m / 60)
+  const rest = m % 60
+  return rest === 0 ? `${h}시간` : `${h}시간 ${rest}분`
+}
+
+export function snsTotal(day: DayRecord): number | null {
+  const values = SNS_APPS.map((a) => day.screenTime[a.id]).filter(
+    (v): v is number => typeof v === 'number',
+  )
+  return values.length === 0 ? null : values.reduce((a, b) => a + b, 0)
+}
 
 export const METRICS: MetricDef[] = [
   {
@@ -135,6 +161,34 @@ export const METRICS: MetricDef[] = [
     get: (d) => d.diet.sugar,
     format: (v) => `${round1(v)} / 5`,
   },
+  {
+    id: 'sns',
+    label: 'SNS 시간',
+    short: 'SNS',
+    color: '#8E6BB5',
+    unit: '',
+    derived: true,
+    get: (d) => snsTotal(d),
+    format: formatMinutes,
+  },
+  {
+    id: 'instagram',
+    label: '인스타그램',
+    short: '인스타',
+    color: '#C25A7B',
+    unit: '',
+    get: (d) => d.screenTime.instagram ?? null,
+    format: formatMinutes,
+  },
+  {
+    id: 'youtube',
+    label: '유튜브',
+    short: '유튜브',
+    color: '#E4572E',
+    unit: '',
+    get: (d) => d.screenTime.youtube ?? null,
+    format: formatMinutes,
+  },
 ]
 
 export const METRIC_BY_ID = Object.fromEntries(METRICS.map((m) => [m.id, m])) as Record<
@@ -225,7 +279,8 @@ export function hasContent(day: DayRecord | undefined): boolean {
     day.diet.protein !== null ||
     day.diet.water !== null ||
     day.diet.creatine !== null ||
-    day.diet.sugar !== null
+    day.diet.sugar !== null ||
+    Object.keys(day.screenTime).length > 0
   )
 }
 
@@ -357,18 +412,19 @@ export function findDiscoveries(
   days: Record<ISODate, DayRecord>,
   minPairs = 5,
 ): Discovery[] {
+  const pool = METRICS.filter((m) => !m.derived)
   const series = new Map<MetricId, (number | null)[]>()
-  for (const m of METRICS) {
+  for (const m of pool) {
     series.set(
       m.id,
       dates.map((d) => (days[d] ? m.get(days[d]) : null)),
     )
   }
   const out: Discovery[] = []
-  for (let i = 0; i < METRICS.length; i++) {
-    for (let j = i + 1; j < METRICS.length; j++) {
-      const a = METRICS[i]
-      const b = METRICS[j]
+  for (let i = 0; i < pool.length; i++) {
+    for (let j = i + 1; j < pool.length; j++) {
+      const a = pool[i]
+      const b = pool[j]
       const { r, n } = pearson(series.get(a.id)!, series.get(b.id)!)
       if (!Number.isFinite(r) || n < minPairs) continue
       if (Math.abs(r) < 0.35) continue
