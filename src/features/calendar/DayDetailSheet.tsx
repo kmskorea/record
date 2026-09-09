@@ -9,6 +9,7 @@ import {
   PeopleSection,
   ReflectionSection,
   ScoreSection,
+  ScreenTimeSection,
   SleepSection,
   TodoSection,
   WorkoutSection,
@@ -88,6 +89,7 @@ export function DayDetailSheet({
           <PeopleSection date={date} onOpenPerson={onOpenPerson} />
           <ReflectionSection date={date} />
           <TimeUseSection date={date} />
+          <ScreenTimeSection date={date} />
         </>
       )}
     </Sheet>

@@ -112,6 +112,14 @@ export interface DayEvent {
   order: number
 }
 
+/** 스크린 타임을 적는 앱. 여기에 한 줄 더하면 화면과 그래프에 같이 붙는다. */
+export const SNS_APPS = [
+  { id: 'instagram', label: '인스타그램', color: '#C25A7B' },
+  { id: 'youtube', label: '유튜브', color: '#E4572E' },
+] as const
+
+export type SnsAppId = (typeof SNS_APPS)[number]['id']
+
 /** 하루를 어디에 썼는지 나누는 칸. 사용자가 직접 만든다. */
 export interface TimeCategory {
   id: string
@@ -160,6 +168,8 @@ export interface DayRecord {
   events: DayEvent[]
   /** 30분 단위 48칸. 각 칸에 시간 유형 id가 들어간다. 안 채운 칸은 null. */
   timeSlots: (string | null)[]
+  /** 앱별 스크린 타임(분). 안 적은 앱은 아예 없다. */
+  screenTime: Record<string, number>
   updatedAt: number
 }
 
@@ -230,6 +240,7 @@ export function emptyDay(date: ISODate): DayRecord {
     scoreNote: '',
     events: [],
     timeSlots: Array.from({ length: SLOT_COUNT }, () => null),
+    screenTime: {},
     updatedAt: 0,
   }
 }

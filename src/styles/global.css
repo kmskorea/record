@@ -1924,3 +1924,58 @@ input[type='number'] {
 .todo[data-dragging='true'] .todo-handle {
   color: var(--ink);
 }
+
+/* ── SNS 사용 시간 ────────────────────────────────────────────────────────── */
+.sns-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.sns-name {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 14px;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
+.sns-name i {
+  width: 10px;
+  height: 10px;
+  border-radius: 3px;
+  flex-shrink: 0;
+}
+
+.sns-inputs {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.sns-inputs .input {
+  width: 58px;
+  padding: 8px 6px;
+  text-align: center;
+  font-size: 15px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  /* 숫자 입력칸의 위아래 화살표는 자리만 차지한다 */
+  -moz-appearance: textfield;
+}
+
+.sns-inputs .input::-webkit-outer-spin-button,
+.sns-inputs .input::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+.sns-unit {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--ink-3);
+}

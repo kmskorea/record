@@ -64,6 +64,14 @@ export function normalizeDay(date: ISODate, raw: unknown): DayRecord {
       const v = Array.isArray(d.timeSlots) ? d.timeSlots[i] : null
       return typeof v === 'string' ? v : null
     }),
+    screenTime:
+      d.screenTime && typeof d.screenTime === 'object'
+        ? Object.fromEntries(
+            Object.entries(d.screenTime).filter(
+              ([, v]) => typeof v === 'number' && Number.isFinite(v) && v >= 0,
+            ),
+          )
+        : base.screenTime,
     updatedAt: typeof d.updatedAt === 'number' ? d.updatedAt : base.updatedAt,
   }
 }
