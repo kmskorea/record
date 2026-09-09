@@ -2,12 +2,14 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import type {
   AppData,
   ContentItem,
+  ContentKindDef,
   DayRecord,
   ISODate,
   NotificationSettings,
   Person,
+  TimeCategory,
 } from './types'
-import { normalizeDay, type SyncState } from './storage'
+import { normalizeDay, recoverOrphanCategories, type SyncState } from './storage'
 
 export type SyncPhase = 'unconfigured' | 'signed-out' | 'idle' | 'syncing' | 'offline' | 'error'
 
@@ -26,6 +28,8 @@ export function pendingCount(state: SyncState): number {
     Object.keys(state.dirtyDays).length +
     Object.keys(state.dirtyPeople).length +
     Object.keys(state.dirtyContent).length +
+    Object.keys(state.dirtyTimeCategories).length +
+    Object.keys(state.dirtyContentKinds).length +
     (state.settingsDirty ? 1 : 0)
   )
 }
@@ -59,6 +63,13 @@ interface DayRow {
  */
 export const PERSON_KIND = 'person'
 export const CONTENT_KIND = 'content'
+/**
+ * 시간 유형과 콘텐츠 유형도 여기 담는다. 설정 뭉치에 두면 통째로 덮어쓰기라,
+ * 한쪽 기기의 옛 목록이 다른 쪽을 지운다. 그러면 그 유형으로 칠해둔 시간표가
+ * 통째로 안 보이게 된다 — 칸에는 유형 id만 들어 있기 때문이다.
+ */
+export const TIME_CATEGORY_KIND = 'timeCategory'
+export const CONTENT_KIND_KIND = 'contentKind'
 
 interface ObjectRow {
   kind: string
@@ -137,21 +148,20 @@ interface SettingsRow {
   data: {
     notifications?: unknown
     customWorkoutParts?: string[]
-    timeCategories?: AppData['timeCategories']
-    customContentKinds?: AppData['customContentKinds']
   }
   updated_at: number
 }
 
-/** 알림 발송 이력은 기기마다 다르므로 올리지 않는다. */
+/**
+ * 알림 발송 이력은 기기마다 다르므로 올리지 않는다.
+ *
+ * 목록형 설정 중 여기 남는 건 운동 부위뿐이다. 지우는 기능이 없어 늘기만
+ * 하므로, 받을 때 합집합으로 두면 어느 쪽도 잃지 않는다. 지울 수 있는
+ * 목록(시간 유형·콘텐츠 유형)은 objects에서 줄 단위로 병합한다.
+ */
 function settingsPayload(data: AppData) {
   const { lastFired: _lastFired, ...notifications } = data.notifications
-  return {
-    notifications,
-    customWorkoutParts: data.customWorkoutParts,
-    timeCategories: data.timeCategories,
-    customContentKinds: data.customContentKinds,
-  }
+  return { notifications, customWorkoutParts: data.customWorkoutParts }
 }
 
 export interface SyncOutcome {
@@ -220,12 +230,24 @@ export async function syncOnce(
   let schemaOutdated = false
   const dirtyPeople = Object.keys(state.dirtyPeople)
   const dirtyContent = Object.keys(state.dirtyContent)
-  if (dirtyPeople.length > 0 || dirtyContent.length > 0) {
+  const dirtyTimeCategories = Object.keys(state.dirtyTimeCategories)
+  const dirtyContentKinds = Object.keys(state.dirtyContentKinds)
+  const pending =
+    dirtyPeople.length + dirtyContent.length + dirtyTimeCategories.length + dirtyContentKinds.length
+  if (pending > 0) {
     const peopleById = new Map(next.people.map((p) => [p.id, p]))
     const contentById = new Map(next.content.map((c) => [c.id, c]))
+    const catsById = new Map(next.timeCategories.map((c) => [c.id, c]))
+    const kindsById = new Map(next.customContentKinds.map((k) => [k.id, k]))
     const rows = [
       ...dirtyPeople.map((id) => outgoing(PERSON_KIND, id, peopleById, next.deletedPeople)),
       ...dirtyContent.map((id) => outgoing(CONTENT_KIND, id, contentById, next.deletedContent)),
+      ...dirtyTimeCategories.map((id) =>
+        outgoing(TIME_CATEGORY_KIND, id, catsById, next.deletedTimeCategories),
+      ),
+      ...dirtyContentKinds.map((id) =>
+        outgoing(CONTENT_KIND_KIND, id, kindsById, next.deletedContentKinds),
+      ),
     ]
     const { error } = await client.rpc('merge_objects', { rows })
     if (error && !isMissingSchema(error)) throw error
@@ -235,6 +257,8 @@ export async function syncOnce(
     } else {
       nextState.dirtyPeople = {}
       nextState.dirtyContent = {}
+      nextState.dirtyTimeCategories = {}
+      nextState.dirtyContentKinds = {}
     }
   }
 
@@ -303,16 +327,37 @@ export async function syncOnce(
     incoming[CONTENT_KIND] ?? [],
     nextState.dirtyContent,
   )
+  const mergedCats = mergeIncoming<TimeCategory>(
+    next.timeCategories,
+    next.deletedTimeCategories,
+    incoming[TIME_CATEGORY_KIND] ?? [],
+    nextState.dirtyTimeCategories,
+  )
+  const mergedKinds = mergeIncoming<ContentKindDef>(
+    next.customContentKinds,
+    next.deletedContentKinds,
+    incoming[CONTENT_KIND_KIND] ?? [],
+    nextState.dirtyContentKinds,
+  )
   const people = mergedPeople.items
   const deletedPeople = mergedPeople.tombstones
   const content = mergedContent.items
   const deletedContent = mergedContent.tombstones
-  changed = changed || mergedPeople.changed || mergedContent.changed
+  // 서버에서 받아온 날에도 목록에 없는 유형이 있을 수 있다. 화면에서 사라지지
+  // 않도록 여기서도 자리를 만들어 둔다.
+  const timeCategories = recoverOrphanCategories(days, mergedCats.items)
+  const deletedTimeCategories = mergedCats.tombstones
+  const customContentKinds = mergedKinds.items
+  const deletedContentKinds = mergedKinds.tombstones
+  changed =
+    changed ||
+    mergedPeople.changed ||
+    mergedContent.changed ||
+    mergedCats.changed ||
+    mergedKinds.changed
 
   let notifications = next.notifications
   let customWorkoutParts = next.customWorkoutParts
-  let timeCategories = next.timeCategories
-  let customContentKinds = next.customContentKinds
   let settingsUpdatedAt = next.settingsUpdatedAt
   const remoteSettings = settingsRow as SettingsRow | null
   if (
@@ -327,14 +372,9 @@ export async function syncOnce(
       // 발송 이력은 기기별로 유지한다.
       lastFired: next.notifications.lastFired,
     }
+    // 운동 부위는 지우는 기능이 없다. 합집합으로 두면 어느 기기의 것도 안 잃는다.
     if (Array.isArray(incoming.customWorkoutParts)) {
-      customWorkoutParts = incoming.customWorkoutParts
-    }
-    if (Array.isArray(incoming.timeCategories)) {
-      timeCategories = incoming.timeCategories
-    }
-    if (Array.isArray(incoming.customContentKinds)) {
-      customContentKinds = incoming.customContentKinds
+      customWorkoutParts = [...new Set([...next.customWorkoutParts, ...incoming.customWorkoutParts])]
     }
     settingsUpdatedAt = remoteSettings.updated_at
     changed = true
@@ -347,6 +387,8 @@ export async function syncOnce(
     content,
     deletedPeople,
     deletedContent,
+    deletedTimeCategories,
+    deletedContentKinds,
     notifications,
     customWorkoutParts,
     timeCategories,
@@ -371,5 +413,19 @@ export function markEverythingDirty(data: AppData, state: SyncState): SyncState 
   const dirtyContent: Record<string, true> = { ...state.dirtyContent }
   for (const item of data.content) dirtyContent[item.id] = true
   for (const id of Object.keys(data.deletedContent)) dirtyContent[id] = true
-  return { ...state, dirtyDays, dirtyPeople, dirtyContent, settingsDirty: true }
+  const dirtyTimeCategories: Record<string, true> = { ...state.dirtyTimeCategories }
+  for (const c of data.timeCategories) dirtyTimeCategories[c.id] = true
+  for (const id of Object.keys(data.deletedTimeCategories)) dirtyTimeCategories[id] = true
+  const dirtyContentKinds: Record<string, true> = { ...state.dirtyContentKinds }
+  for (const k of data.customContentKinds) dirtyContentKinds[k.id] = true
+  for (const id of Object.keys(data.deletedContentKinds)) dirtyContentKinds[id] = true
+  return {
+    ...state,
+    dirtyDays,
+    dirtyPeople,
+    dirtyContent,
+    dirtyTimeCategories,
+    dirtyContentKinds,
+    settingsDirty: true,
+  }
 }

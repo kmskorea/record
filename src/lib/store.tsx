@@ -400,14 +400,17 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         newLabel: `새 ${clean}`,
         fields,
         colorIndex: all.length % CONTENT_COLORS.length,
+        updatedAt: Date.now(),
       }
       const nextData: AppData = {
         ...dataRef.current,
         customContentKinds: [...dataRef.current.customContentKinds, kind],
-        settingsUpdatedAt: Date.now(),
       }
       dataRef.current = nextData
-      commit(nextData, (s) => ({ ...s, settingsDirty: true }))
+      commit(nextData, (s) => ({
+        ...s,
+        dirtyContentKinds: { ...s.dirtyContentKinds, [kind.id]: true },
+      }))
       return kind
     },
     [commit],
@@ -468,14 +471,17 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         id: newId(),
         label: clean,
         colorIndex: dataRef.current.timeCategories.length % TIME_COLORS.length,
+        updatedAt: Date.now(),
       }
       const nextData: AppData = {
         ...dataRef.current,
         timeCategories: [...dataRef.current.timeCategories, category],
-        settingsUpdatedAt: Date.now(),
       }
       dataRef.current = nextData
-      commit(nextData, (s) => ({ ...s, settingsDirty: true }))
+      commit(nextData, (s) => ({
+        ...s,
+        dirtyTimeCategories: { ...s.dirtyTimeCategories, [category.id]: true },
+      }))
       return category
     },
     [commit],
@@ -488,12 +494,14 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       const nextData: AppData = {
         ...dataRef.current,
         timeCategories: dataRef.current.timeCategories.map((c) =>
-          c.id === id ? { ...c, label: clean } : c,
+          c.id === id ? { ...c, label: clean, updatedAt: Date.now() } : c,
         ),
-        settingsUpdatedAt: Date.now(),
       }
       dataRef.current = nextData
-      commit(nextData, (s) => ({ ...s, settingsDirty: true }))
+      commit(nextData, (s) => ({
+        ...s,
+        dirtyTimeCategories: { ...s.dirtyTimeCategories, [id]: true },
+      }))
     },
     [commit],
   )
@@ -520,13 +528,13 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         ...dataRef.current,
         days,
         timeCategories: dataRef.current.timeCategories.filter((c) => c.id !== id),
-        settingsUpdatedAt: now,
+        deletedTimeCategories: { ...dataRef.current.deletedTimeCategories, [id]: now },
       }
       dataRef.current = nextData
       commit(nextData, (s) => {
         const dirtyDays = { ...s.dirtyDays }
         for (const date of touched) dirtyDays[date] = true
-        return { ...s, dirtyDays, settingsDirty: true }
+        return { ...s, dirtyDays, dirtyTimeCategories: { ...s.dirtyTimeCategories, [id]: true } }
       })
     },
     [commit],
