@@ -1894,3 +1894,33 @@ input[type='number'] {
   color: var(--ink-2);
   font-weight: 700;
 }
+
+/* ── 할 일 순서 바꾸기 ────────────────────────────────────────────────────── */
+.todo-handle {
+  font-size: 18px;
+  color: var(--ink-3);
+  flex-shrink: 0;
+  padding: 6px 2px;
+  margin-left: -4px;
+  /* 끄는 동안 페이지가 스크롤되거나 글자가 선택되지 않게 한다 */
+  touch-action: none;
+  -webkit-user-select: none;
+  user-select: none;
+  cursor: grab;
+}
+
+.todo-handle:active {
+  cursor: grabbing;
+  color: var(--ink);
+}
+
+.todo[data-dragging='true'] {
+  background: var(--surface-2);
+  border-radius: var(--r-md);
+  box-shadow: var(--shadow-lift);
+  border-bottom-color: transparent;
+}
+
+.todo[data-dragging='true'] .todo-handle {
+  color: var(--ink);
+}

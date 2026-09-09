@@ -1,4 +1,4 @@
-import type { AppData, DayRecord, ISODate, Person, TimeCategory } from './types'
+import type { AppData, DayEvent, DayRecord, ISODate, Person, TimeCategory, Todo } from './types'
 import { DEFAULT_NOTIFICATIONS, SLOT_COUNT, emptyDay } from './types'
 
 const KEY = 'record.app.v1'
@@ -27,11 +27,15 @@ export function normalizeDay(date: ISODate, raw: unknown): DayRecord {
   const base = emptyDay(date)
   if (!raw || typeof raw !== 'object') return base
   const d = raw as Partial<DayRecord>
+  const { todos, events } = withOrder(
+    Array.isArray(d.todos) ? d.todos : base.todos,
+    Array.isArray(d.events) ? d.events : base.events,
+  )
   return {
     ...base,
     ...d,
     date,
-    todos: Array.isArray(d.todos) ? d.todos : base.todos,
+    todos,
     ideas: Array.isArray(d.ideas) ? d.ideas : base.ideas,
     interactions: Array.isArray(d.interactions) ? d.interactions : base.interactions,
     sleep: { ...base.sleep, ...(d.sleep ?? {}) },
@@ -54,13 +58,41 @@ export function normalizeDay(date: ISODate, raw: unknown): DayRecord {
     reflection: typeof d.reflection === 'string' ? d.reflection : base.reflection,
     score: typeof d.score === 'number' ? d.score : base.score,
     scoreNote: typeof d.scoreNote === 'string' ? d.scoreNote : base.scoreNote,
-    events: Array.isArray(d.events) ? d.events : base.events,
+    events,
     // 칸 수는 항상 48이어야 한다. 모자라거나 남으면 잘라 맞춘다.
     timeSlots: Array.from({ length: SLOT_COUNT }, (_, i) => {
       const v = Array.isArray(d.timeSlots) ? d.timeSlots[i] : null
       return typeof v === 'string' ? v : null
     }),
     updatedAt: typeof d.updatedAt === 'number' ? d.updatedAt : base.updatedAt,
+  }
+}
+
+/**
+ * 자리 번호가 없는 옛 기록에 번호를 매긴다.
+ * 예전에 화면이 쓰던 순서(시각이 정해진 것부터, 그다음 만든 순)를 그대로
+ * 이어받아야, 앱을 새로 열었을 때 목록이 제멋대로 뒤바뀌지 않는다.
+ */
+function withOrder(rawTodos: Todo[], rawEvents: DayEvent[]): { todos: Todo[]; events: DayEvent[] } {
+  const hasAll =
+    rawTodos.every((t) => typeof t?.order === 'number') &&
+    rawEvents.every((e) => typeof e?.order === 'number')
+  if (hasAll) return { todos: rawTodos, events: rawEvents }
+
+  const combined = [
+    ...rawEvents.map((e) => ({ kind: 'event' as const, id: e.id, time: e.time, createdAt: e.createdAt })),
+    ...rawTodos.map((t) => ({ kind: 'todo' as const, id: t.id, time: null, createdAt: t.createdAt })),
+  ].sort((a, b) => {
+    if (a.time && b.time) return a.time.localeCompare(b.time)
+    if (a.time) return -1
+    if (b.time) return 1
+    return (a.createdAt ?? 0) - (b.createdAt ?? 0)
+  })
+  const rank = new Map(combined.map((x, i) => [`${x.kind}:${x.id}`, i]))
+
+  return {
+    todos: rawTodos.map((t) => ({ ...t, order: t.order ?? rank.get(`todo:${t.id}`) ?? 0 })),
+    events: rawEvents.map((e) => ({ ...e, order: e.order ?? rank.get(`event:${e.id}`) ?? 0 })),
   }
 }
 

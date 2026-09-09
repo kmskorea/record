@@ -12,6 +12,8 @@ export interface Todo {
   text: string
   done: boolean
   createdAt: number
+  /** 목록에서의 자리. 할 일과 일정이 한 목록이라 둘이 같은 눈금을 쓴다. */
+  order: number
 }
 
 export interface Idea {
@@ -106,6 +108,8 @@ export interface DayEvent {
   personIds: string[]
   done: boolean
   createdAt: number
+  /** 목록에서의 자리. 할 일과 같은 눈금을 쓴다. */
+  order: number
 }
 
 /** 하루를 어디에 썼는지 나누는 칸. 사용자가 직접 만든다. */

@@ -97,6 +97,17 @@ export const ArrowIcon = (p: P) => (
   </svg>
 )
 
+export const GripIcon = (p: P) => (
+  <svg {...base} {...p} strokeWidth={0} fill="currentColor" stroke="none">
+    <circle cx="9" cy="6" r="1.6" />
+    <circle cx="15" cy="6" r="1.6" />
+    <circle cx="9" cy="12" r="1.6" />
+    <circle cx="15" cy="12" r="1.6" />
+    <circle cx="9" cy="18" r="1.6" />
+    <circle cx="15" cy="18" r="1.6" />
+  </svg>
+)
+
 export const DownloadIcon = (p: P) => (
   <svg {...base} {...p}>
     <path d="M12 3v12M7.5 10.5 12 15l4.5-4.5M4 20h16" />

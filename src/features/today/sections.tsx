@@ -10,7 +10,8 @@ import {
   initial,
 } from '../../components/ui'
 import { StarRating } from '../../components/StarRating'
-import { BulbIcon, PlusIcon, TrashIcon } from '../../components/icons'
+import { BulbIcon, GripIcon, PlusIcon, TrashIcon } from '../../components/icons'
+import { useDragOrder } from '../../components/useDragOrder'
 import { useStore } from '../../lib/store'
 import { newId } from '../../lib/storage'
 import { formatTime } from '../../lib/date'
@@ -54,6 +55,10 @@ export function TodoSection({ date, onOpenPerson }: SectionProps & { onOpenPerso
     setDetail(false)
   }
 
+  /** 지금 목록에서 가장 뒤 번호. 새로 넣는 것은 맨 끝에 붙인다. */
+  const nextOrder = () =>
+    Math.max(-1, ...day.todos.map((t) => t.order), ...day.events.map((e) => e.order)) + 1
+
   const add = () => {
     const text = draft.trim()
     if (!text) return
@@ -69,13 +74,17 @@ export function TodoSection({ date, onOpenPerson }: SectionProps & { onOpenPerso
             personIds: kind === 'appointment' ? people : [],
             done: false,
             createdAt: Date.now(),
+            order: nextOrder(),
           },
         ],
       }))
       resetForm()
     } else {
       updateDay(date, (d) => ({
-        todos: [...d.todos, { id: newId(), text, done: false, createdAt: Date.now() }],
+        todos: [
+          ...d.todos,
+          { id: newId(), text, done: false, createdAt: Date.now(), order: nextOrder() },
+        ],
       }))
       setDraft('')
     }
@@ -91,6 +100,7 @@ export function TodoSection({ date, onOpenPerson }: SectionProps & { onOpenPerso
       kind: EventKind | null
       personIds: string[]
       createdAt: number
+      order: number
       toggle: (v: boolean) => void
       remove: () => void
     }
@@ -103,6 +113,7 @@ export function TodoSection({ date, onOpenPerson }: SectionProps & { onOpenPerso
         kind: ev.kind,
         personIds: ev.personIds,
         createdAt: ev.createdAt,
+        order: ev.order,
         toggle: (v: boolean) =>
           updateDay(date, (d) => ({
             events: d.events.map((x) => (x.id === ev.id ? { ...x, done: v } : x)),
@@ -118,6 +129,7 @@ export function TodoSection({ date, onOpenPerson }: SectionProps & { onOpenPerso
         kind: null,
         personIds: [],
         createdAt: t.createdAt,
+        order: t.order,
         toggle: (v: boolean) =>
           updateDay(date, (d) => ({
             todos: d.todos.map((x) => (x.id === t.id ? { ...x, done: v } : x)),
@@ -125,14 +137,30 @@ export function TodoSection({ date, onOpenPerson }: SectionProps & { onOpenPerso
         remove: () => updateDay(date, (d) => ({ todos: d.todos.filter((x) => x.id !== t.id) })),
       })),
     ]
-    // 시각이 정해진 것부터, 그 안에서는 이른 시각 순
-    return list.sort((a, b) => {
-      if (a.time && b.time) return a.time.localeCompare(b.time)
-      if (a.time) return -1
-      if (b.time) return 1
-      return a.createdAt - b.createdAt
-    })
+    // 사용자가 정해둔 자리 순. 같으면 만든 순으로 갈린다.
+    return list.sort((a, b) => a.order - b.order || a.createdAt - b.createdAt)
   }, [day.events, day.todos, date, updateDay])
+
+  /** 끌어서 옮긴 결과를 자리 번호로 굳힌다. */
+  const commitOrder = (keys: string[]) => {
+    const rank = new Map(keys.map((k, i) => [k, i]))
+    updateDay(date, (d) => ({
+      events: d.events.map((e) => ({ ...e, order: rank.get(`e-${e.id}`) ?? e.order })),
+      todos: d.todos.map((t) => ({ ...t, order: rank.get(`t-${t.id}`) ?? t.order })),
+    }))
+  }
+
+  const { listRef, order, draggingKey, start, move, end } = useDragOrder(
+    useMemo(() => rows.map((r) => r.key), [rows]),
+    commitOrder,
+  )
+
+  // 끄는 동안에는 화면에만 새 자리를 반영한다.
+  const shown = useMemo(() => {
+    if (!order) return rows
+    const byKey = new Map(rows.map((r) => [r.key, r]))
+    return order.map((k) => byKey.get(k)!).filter(Boolean)
+  }, [order, rows])
 
   const done = rows.filter((r) => r.done).length
 
@@ -152,9 +180,27 @@ export function TodoSection({ date, onOpenPerson }: SectionProps & { onOpenPerso
       {rows.length === 0 ? (
         <Empty>할 일이나 약속, 마감을 적어보세요.</Empty>
       ) : (
-        <ul>
-          {rows.map((row) => (
-            <li key={row.key} className="todo" data-done={row.done}>
+        <ul
+          ref={listRef}
+          onPointerMove={(e) => move(e.clientY)}
+          onPointerUp={end}
+          onPointerCancel={end}
+        >
+          {shown.map((row) => (
+            <li
+              key={row.key}
+              className="todo"
+              data-done={row.done}
+              data-dragging={row.key === draggingKey}
+            >
+              <button
+                type="button"
+                className="todo-handle"
+                aria-label={`${row.title} 순서 옮기기`}
+                onPointerDown={(e) => start(row.key, e)}
+              >
+                <GripIcon />
+              </button>
               <Checkbox checked={row.done} label={row.title} onChange={row.toggle} />
               <span className="todo-text">
                 <span className="todo-title">{row.title}</span>
