@@ -14,6 +14,7 @@ export type MetricId =
   | 'water'
   | 'creatine'
   | 'sugar'
+  | 'alcohol'
   | 'sns'
   | 'instagram'
   | 'youtube'
@@ -191,6 +192,18 @@ export const METRICS: MetricDef[] = [
     format: (v) => (v >= 0.5 ? 'O (먹음)' : 'X (안 먹음)'),
   },
   {
+    id: 'alcohol',
+    label: '음주',
+    short: '음주',
+    color: '#8E6BB5',
+    unit: '',
+    domain: [0, 1],
+    // 주종마다 단위가 달라서(1병과 1잔) 양을 한 숫자로 합치면 거짓이 된다.
+    // 마신 날인지 아닌지만 본다.
+    get: (d) => (d.diet.alcohol === null ? null : d.diet.alcohol ? 1 : 0),
+    format: (v) => (v >= 0.5 ? 'O (마심)' : 'X (안 마심)'),
+  },
+  {
     id: 'sugar',
     label: '당분',
     short: '당분',
@@ -352,6 +365,7 @@ export function hasContent(day: DayRecord | undefined): boolean {
     day.diet.protein !== null ||
     day.diet.water !== null ||
     day.diet.creatine !== null ||
+    day.diet.alcohol !== null ||
     day.diet.sugar !== null ||
     Object.keys(day.screenTime).length > 0
   )

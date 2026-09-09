@@ -209,6 +209,16 @@ export interface Workout {
   memo: string
 }
 
+/** 마신 술 한 줄. 소주 1병, 맥주 2잔처럼 주종마다 따로 적는다. */
+export interface Drink {
+  id: string
+  /** 소주/맥주/와인 … 직접 적은 것도 들어온다 */
+  kind: string
+  amount: number
+  /** 잔 / 병 / 캔 */
+  unit: string
+}
+
 export interface Diet {
   meals: Meal[]
   protein: Level | null
@@ -216,6 +226,10 @@ export interface Diet {
   /** 먹었나 안 먹었나만 본다. null = 아직 기록 안 함 */
   creatine: boolean | null
   sugar: Level | null
+  /** 마셨나 안 마셨나. null = 아직 기록 안 함 */
+  alcohol: boolean | null
+  /** 마신 날에만 채운다 */
+  drinks: Drink[]
 }
 
 export type EventKind = 'appointment' | 'deadline' | 'task'
@@ -375,6 +389,18 @@ export function isRunning(parts: string[]): boolean {
 
 export const MEAL_LABELS = ['아침', '점심', '저녁', '간식'] as const
 
+export const DRINK_UNITS = ['잔', '병', '캔'] as const
+
+/** 자주 마시는 주종과, 그 주종에서 자연스러운 단위. */
+export const ALCOHOL_KINDS: { label: string; unit: string }[] = [
+  { label: '소주', unit: '병' },
+  { label: '맥주', unit: '잔' },
+  { label: '와인', unit: '잔' },
+  { label: '막걸리', unit: '병' },
+  { label: '위스키', unit: '잔' },
+  { label: '하이볼', unit: '잔' },
+]
+
 export const INTENSITY_LABEL: Record<Intensity, string> = {
   low: '낮음',
   mid: '보통',
@@ -408,7 +434,15 @@ export function emptyDay(date: ISODate): DayRecord {
       memo: '',
     },
     weight: null,
-    diet: { meals: [], protein: null, water: null, creatine: null, sugar: null },
+    diet: {
+      meals: [],
+      protein: null,
+      water: null,
+      creatine: null,
+      sugar: null,
+      alcohol: null,
+      drinks: [],
+    },
     interactions: [],
     contentLogs: [],
     reflection: '',

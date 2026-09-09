@@ -2028,6 +2028,42 @@ input[type='number'] {
   color: var(--ink-3);
 }
 
+/* ── 음주 ─────────────────────────────────────────────────────────────────── */
+.drink-row {
+  background: var(--surface-2);
+  border-radius: var(--r-md);
+  padding: 12px;
+}
+
+.drink-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.drink-amount {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.drink-amount .input {
+  width: 76px;
+  background: var(--surface);
+  border-color: var(--line);
+  text-align: center;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  -moz-appearance: textfield;
+}
+
+.drink-amount .input::-webkit-outer-spin-button,
+.drink-amount .input::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
 /* 유형 정리 중에만 나오는 삭제 단추. 평소에는 칩만 보인다. */
 .paint-chip-wrap {
   position: relative;
