@@ -11,13 +11,14 @@ import {
 import type { Session } from '@supabase/supabase-js'
 import type {
   AppData,
+  Book,
   DayRecord,
   ISODate,
   NotificationSettings,
   Person,
   TimeCategory,
 } from './types'
-import { emptyDay, PERSON_COLORS, TIME_COLORS } from './types'
+import { emptyDay, PROFILE_COLORS, TIME_COLORS } from './types'
 import {
   flush,
   load,
@@ -40,6 +41,9 @@ interface StoreValue {
   addPerson: (name: string, relation: string) => Person
   updatePerson: (id: string, patch: Partial<Omit<Person, 'id'>>) => void
   deletePerson: (id: string) => void
+  addBook: (title: string, author: string) => Book
+  updateBook: (id: string, patch: Partial<Omit<Book, 'id'>>) => void
+  deleteBook: (id: string) => void
   setNotifications: (patch: Partial<NotificationSettings>) => void
   markNotificationFired: (slot: string, date: ISODate) => void
   addCustomWorkoutPart: (part: string) => void
@@ -70,6 +74,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     loadConfig() ? 'signed-out' : 'unconfigured',
   )
   const [syncError, setSyncError] = useState<string | null>(null)
+  const [schemaOutdated, setSchemaOutdated] = useState(false)
   const [configVersion, setConfigVersion] = useState(0)
 
   const dataRef = useRef(data)
@@ -144,6 +149,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       save(outcome.data)
       commitState(outcome.state)
       setSyncError(null)
+      setSchemaOutdated(outcome.schemaOutdated)
       setPhase('idle')
     } catch (err) {
       console.error('동기화 실패', err)
@@ -249,7 +255,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         id: newId(),
         name: name.trim(),
         relation: relation.trim(),
-        colorIndex: Math.floor(Math.random() * PERSON_COLORS.length),
+        colorIndex: Math.floor(Math.random() * PROFILE_COLORS.length),
         createdAt: now,
         updatedAt: now,
       }
@@ -303,6 +309,72 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         const dirtyDays = { ...s.dirtyDays }
         for (const date of touched) dirtyDays[date] = true
         return { ...s, dirtyDays, dirtyPeople: { ...s.dirtyPeople, [id]: true } }
+      })
+    },
+    [commit],
+  )
+
+  const addBook = useCallback<StoreValue['addBook']>(
+    (title, author) => {
+      const now = Date.now()
+      const book: Book = {
+        id: newId(),
+        title: title.trim(),
+        author: author.trim(),
+        colorIndex: Math.floor(Math.random() * PROFILE_COLORS.length),
+        createdAt: now,
+        updatedAt: now,
+      }
+      const nextData = { ...dataRef.current, books: [...dataRef.current.books, book] }
+      dataRef.current = nextData
+      commit(nextData, (s) => ({ ...s, dirtyBooks: { ...s.dirtyBooks, [book.id]: true } }))
+      return book
+    },
+    [commit],
+  )
+
+  const updateBook = useCallback<StoreValue['updateBook']>(
+    (id, patch) => {
+      const nextData = {
+        ...dataRef.current,
+        books: dataRef.current.books.map((b) =>
+          b.id === id ? { ...b, ...patch, updatedAt: Date.now() } : b,
+        ),
+      }
+      dataRef.current = nextData
+      commit(nextData, (s) => ({ ...s, dirtyBooks: { ...s.dirtyBooks, [id]: true } }))
+    },
+    [commit],
+  )
+
+  const deleteBook = useCallback<StoreValue['deleteBook']>(
+    (id) => {
+      const now = Date.now()
+      const days: Record<ISODate, DayRecord> = {}
+      const touched: ISODate[] = []
+      for (const [date, day] of Object.entries(dataRef.current.days)) {
+        if (day.readings.some((r) => r.bookId === id)) {
+          days[date] = {
+            ...day,
+            readings: day.readings.filter((r) => r.bookId !== id),
+            updatedAt: now,
+          }
+          touched.push(date)
+        } else {
+          days[date] = day
+        }
+      }
+      const nextData: AppData = {
+        ...dataRef.current,
+        days,
+        books: dataRef.current.books.filter((b) => b.id !== id),
+        deletedBooks: { ...dataRef.current.deletedBooks, [id]: now },
+      }
+      dataRef.current = nextData
+      commit(nextData, (s) => {
+        const dirtyDays = { ...s.dirtyDays }
+        for (const date of touched) dirtyDays[date] = true
+        return { ...s, dirtyDays, dirtyBooks: { ...s.dirtyBooks, [id]: true } }
       })
     },
     [commit],
@@ -475,8 +547,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       lastSyncedAt: syncState.lastSyncedAt,
       pending: pendingCount(syncState),
       error: syncError,
+      schemaOutdated,
     }),
-    [phase, syncState, syncError],
+    [phase, syncState, syncError, schemaOutdated],
   )
 
   const value = useMemo<StoreValue>(
@@ -488,6 +561,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       addPerson,
       updatePerson,
       deletePerson,
+      addBook,
+      updateBook,
+      deleteBook,
       setNotifications,
       markNotificationFired,
       addCustomWorkoutPart,
@@ -512,6 +588,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       addPerson,
       updatePerson,
       deletePerson,
+      addBook,
+      updateBook,
+      deleteBook,
       setNotifications,
       markNotificationFired,
       addCustomWorkoutPart,

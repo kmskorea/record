@@ -125,6 +125,19 @@ export function AccountSection() {
             </div>
           )}
 
+          {/*
+            독서를 나중에 붙였으므로, 앱만 새로 받고 Supabase 스키마를 아직
+            다시 실행하지 않은 시기가 생긴다. 그 사이에도 하루 기록은 계속
+            오가지만 책만 못 올라간다는 사실은 알려줘야 한다.
+          */}
+          {sync.schemaOutdated && (
+            <div className="banner" style={{ marginTop: 12, color: 'var(--brown)' }}>
+              책 기록을 올릴 자리가 서버에 아직 없습니다. Supabase의 SQL Editor에서{' '}
+              <code>supabase/schema.sql</code>을 다시 한 번 실행해 주세요. 그때까지 독서 기록은 이
+              기기에 안전하게 남아 있다가 그대로 올라갑니다. (다른 기록은 지금도 정상입니다.)
+            </div>
+          )}
+
           <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
             <button
               type="button"

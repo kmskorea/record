@@ -15,7 +15,7 @@ import {
   todoRate,
   weekdayAverages,
 } from '../../lib/metrics'
-import { PERSON_COLORS, type DayRecord, type ISODate, type TimeCategory } from '../../lib/types'
+import { PROFILE_COLORS, type DayRecord, type ISODate, type TimeCategory } from '../../lib/types'
 import { TimeScoreWidget, TimeShareWidget, UpcomingWidget } from './TimeInsights'
 
 const WINDOW = 30
@@ -258,7 +258,7 @@ export function InsightsPanel({
               >
                 <span
                   className="avatar"
-                  style={{ background: PERSON_COLORS[person.colorIndex % PERSON_COLORS.length] }}
+                  style={{ background: PROFILE_COLORS[person.colorIndex % PROFILE_COLORS.length] }}
                 >
                   {initial(person.name)}
                 </span>

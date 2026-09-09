@@ -43,6 +43,7 @@ export function CollapsibleCard({
   mark,
   summary,
   filled,
+  alwaysCollapsed,
   children,
 }: {
   title: ReactNode
@@ -51,10 +52,15 @@ export function CollapsibleCard({
   summary: ReactNode
   /** 이미 값이 있는지. 처음 그릴 때 접을지 정하는 기준이다. */
   filled: boolean
+  /**
+   * 값이 없어도 접어둘지. 안 하는 날이 더 많은 칸(독서)은 비어 있어도
+   * 펼쳐두면 화면만 차지한다. 그런 칸은 눌러야 열리게 한다.
+   */
+  alwaysCollapsed?: boolean
   children: ReactNode
 }) {
   // 처음 그릴 때만 판단한다. 적는 도중에 접히면 오히려 방해가 된다.
-  const [expanded, setExpanded] = useState(!filled)
+  const [expanded, setExpanded] = useState(!filled && !alwaysCollapsed)
 
   return (
     <section className="card" data-collapsed={!expanded}>

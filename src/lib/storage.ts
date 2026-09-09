@@ -1,9 +1,11 @@
 import type {
   AppData,
+  Book,
   DayEvent,
   DayRecord,
   ISODate,
   Person,
+  Reading,
   TimeCategory,
   Todo,
   Workout,
@@ -27,11 +29,29 @@ export function emptyData(): AppData {
     version: VERSION,
     days: {},
     people: [],
+    books: [],
     notifications: { ...DEFAULT_NOTIFICATIONS, lastFired: {} },
     customWorkoutParts: [],
     timeCategories: [],
     deletedPeople: {},
+    deletedBooks: {},
     settingsUpdatedAt: 0,
+  }
+}
+
+/**
+ * 읽은 기록 한 줄. 쪽수는 안 적을 수 있고(구절만 남기는 날이 있다),
+ * 구절과 생각은 없더라도 빈 문자열이어야 화면에서 undefined가 새지 않는다.
+ */
+function normalizeReading(raw: unknown): Reading {
+  const r = (raw ?? {}) as Partial<Reading>
+  return {
+    id: typeof r.id === 'string' ? r.id : newId(),
+    bookId: typeof r.bookId === 'string' ? r.bookId : '',
+    pages: typeof r.pages === 'number' && Number.isFinite(r.pages) && r.pages > 0 ? r.pages : null,
+    quote: typeof r.quote === 'string' ? r.quote : '',
+    thought: typeof r.thought === 'string' ? r.thought : '',
+    at: typeof r.at === 'number' ? r.at : 0,
   }
 }
 
@@ -80,6 +100,7 @@ export function normalizeDay(date: ISODate, raw: unknown): DayRecord {
     todos,
     ideas: Array.isArray(d.ideas) ? d.ideas : base.ideas,
     interactions: Array.isArray(d.interactions) ? d.interactions : base.interactions,
+    readings: Array.isArray(d.readings) ? d.readings.map(normalizeReading) : base.readings,
     sleep: { ...base.sleep, ...(d.sleep ?? {}) },
     condition: { ...base.condition, ...(d.condition ?? {}) },
     workout: normalizeWorkout(d.workout, base.workout),
@@ -142,6 +163,20 @@ function withOrder(rawTodos: Todo[], rawEvents: DayEvent[]): { todos: Todo[]; ev
   }
 }
 
+function normalizeBook(raw: unknown): Book | null {
+  if (!raw || typeof raw !== 'object') return null
+  const b = raw as Partial<Book>
+  if (!b.id || typeof b.id !== 'string') return null
+  return {
+    id: b.id,
+    title: typeof b.title === 'string' ? b.title : '',
+    author: typeof b.author === 'string' ? b.author : '',
+    colorIndex: typeof b.colorIndex === 'number' ? b.colorIndex : 0,
+    createdAt: typeof b.createdAt === 'number' ? b.createdAt : Date.now(),
+    updatedAt: typeof b.updatedAt === 'number' ? b.updatedAt : (b.createdAt ?? Date.now()),
+  }
+}
+
 function normalizePerson(raw: unknown): Person | null {
   if (!raw || typeof raw !== 'object') return null
   const p = raw as Partial<Person>
@@ -187,10 +222,15 @@ export function migrate(input: unknown): AppData {
     ? raw.people.map(normalizePerson).filter((p): p is Person => p !== null)
     : base.people
 
+  const books = Array.isArray(raw.books)
+    ? raw.books.map(normalizeBook).filter((b): b is Book => b !== null)
+    : base.books
+
   return {
     version: VERSION,
     days,
     people,
+    books,
     notifications: { ...base.notifications, ...(raw.notifications ?? {}) },
     // 예전에 직접 추가해둔 이름이 기본 부위가 되는 일이 있다('러닝'). 칩이 두 번
     // 나오지 않게 기본 목록과 겹치는 건 여기서 걷어낸다.
@@ -207,6 +247,7 @@ export function migrate(input: unknown): AppData {
       : [],
     deletedPeople:
       raw.deletedPeople && typeof raw.deletedPeople === 'object' ? raw.deletedPeople : {},
+    deletedBooks: raw.deletedBooks && typeof raw.deletedBooks === 'object' ? raw.deletedBooks : {},
     settingsUpdatedAt: typeof raw.settingsUpdatedAt === 'number' ? raw.settingsUpdatedAt : 0,
   }
 }
@@ -234,6 +275,7 @@ export interface SyncState {
   /** 아직 서버에 올리지 못한 날짜/사람. 앱이 꺼졌다 켜져도 남아야 하므로 따로 저장한다. */
   dirtyDays: Record<ISODate, true>
   dirtyPeople: Record<string, true>
+  dirtyBooks: Record<string, true>
   settingsDirty: boolean
   /** 증분 조회 커서 (서버 시각) */
   cursor: string | null
@@ -241,7 +283,14 @@ export interface SyncState {
 }
 
 export function emptySyncState(): SyncState {
-  return { dirtyDays: {}, dirtyPeople: {}, settingsDirty: false, cursor: null, lastSyncedAt: null }
+  return {
+    dirtyDays: {},
+    dirtyPeople: {},
+    dirtyBooks: {},
+    settingsDirty: false,
+    cursor: null,
+    lastSyncedAt: null,
+  }
 }
 
 export function loadSyncState(): SyncState {
