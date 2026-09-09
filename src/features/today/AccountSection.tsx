@@ -126,15 +126,23 @@ export function AccountSection() {
           )}
 
           {/*
-            저장할 것이 늘어 테이블이 추가되면, 앱만 새로 받고 Supabase 스키마를
-            아직 다시 실행하지 않은 시기가 생긴다. 그 사이에도 하루 기록은 계속
-            오가지만 그것만 못 올라간다는 사실은 알려줘야 한다.
+            서버 스키마를 아직 안 돌린 계정에서도 하루 기록은 계속 오간다.
+            사람·콘텐츠만 못 올라간다는 사실과 할 일을 바로 알려준다.
+            (스키마를 한 번 돌리면 앞으로 다시 볼 일이 없는 안내다.)
           */}
           {sync.schemaOutdated && (
             <div className="banner" style={{ marginTop: 12, color: 'var(--brown)' }}>
-              콘텐츠 기록을 올릴 자리가 서버에 아직 없습니다. Supabase의 SQL Editor에서{' '}
-              <code>supabase/schema.sql</code>을 다시 한 번 실행해 주세요. 그때까지 콘텐츠 기록은
-              이 기기에 안전하게 남아 있다가 그대로 올라갑니다. (다른 기록은 지금도 정상입니다.)
+              사람·콘텐츠를 올릴 자리가 서버에 아직 없습니다. Supabase의 SQL Editor에서{' '}
+              <a
+                href="https://github.com/kmskorea/record/blob/main/supabase/schema.sql"
+                target="_blank"
+                rel="noreferrer"
+                style={{ textDecoration: 'underline' }}
+              >
+                schema.sql
+              </a>
+              을 통째로 붙여넣고 한 번 실행해 주세요. 그때까지 이 기록들은 이 기기에 안전하게
+              남아 있다가 그대로 올라갑니다. (하루 기록은 지금도 정상으로 오가고 있습니다.)
             </div>
           )}
 
