@@ -3,10 +3,10 @@ import { Sheet } from '../../components/ui'
 import { TimeUseSection } from '../today/TimeUseSection'
 import {
   BodySection,
-  ConditionSection,
   ContentSection,
   DietSection,
   IdeaSection,
+  InnerStateSection,
   PeopleSection,
   ReflectionSection,
   ScoreSection,
@@ -84,16 +84,16 @@ export function DayDetailSheet({
           <ScoreSection date={date} />
           <TodoSection date={date} onOpenPerson={onOpenPerson} />
           <SleepSection date={date} />
-          <ConditionSection date={date} />
+          <InnerStateSection date={date} />
           <IdeaSection date={date} />
           <WorkoutSection date={date} />
           <BodySection date={date} />
           <DietSection date={date} />
           <PeopleSection date={date} onOpenPerson={onOpenPerson} />
           <ContentSection date={date} onOpenContent={onOpenContent} />
+          <ScreenTimeSection date={date} />
           <ReflectionSection date={date} />
           <TimeUseSection date={date} />
-          <ScreenTimeSection date={date} />
         </>
       )}
     </Sheet>

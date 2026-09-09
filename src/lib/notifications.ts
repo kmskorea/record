@@ -11,7 +11,7 @@ export const SLOT_COPY: Record<Slot, { title: string; body: string }> = {
   },
   night: {
     title: '하루를 정리할 시간',
-    body: '컨디션, 운동, 오늘 있었던 일을 남겨두세요.',
+    body: '내면 상태, 운동, 오늘 있었던 일을 남겨두세요.',
   },
 }
 

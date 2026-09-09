@@ -1,10 +1,10 @@
 import { useState } from 'react'
 import {
   BodySection,
-  ConditionSection,
   ContentSection,
   DietSection,
   IdeaSection,
+  InnerStateSection,
   PeopleSection,
   ReflectionSection,
   ScoreSection,
@@ -56,7 +56,7 @@ export function TodayScreen({
       <div className="masonry">
         <TodoSection date={today} onOpenPerson={onOpenPerson} />
         <SleepSection date={today} />
-        <ConditionSection date={today} />
+        <InnerStateSection date={today} />
       </div>
 
       <div className="section-label">하루 중</div>
@@ -69,12 +69,12 @@ export function TodayScreen({
         <DietSection date={today} />
         <PeopleSection date={today} onOpenPerson={onOpenPerson} />
         <ContentSection date={today} onOpenContent={onOpenContent} />
+        <ScreenTimeSection date={today} />
         <ReflectionSection date={today} />
       </div>
 
       <div className="section-label">하루 마무리</div>
       <TimeUseSection date={today} />
-      <ScreenTimeSection date={today} />
       <ScoreSection date={today} />
 
       {settingsOpen && <SettingsSheet onClose={() => setSettingsOpen(false)} />}

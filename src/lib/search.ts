@@ -3,7 +3,7 @@ import type { ContentItem, ContentLog, DayRecord, ISODate, Person } from './type
 export type HitKind =
   | '할일'
   | '아이디어'
-  | '컨디션'
+  | '내면 상태'
   | '운동'
   | '식사'
   | '관계'
@@ -47,7 +47,7 @@ export function searchAll(
 
     for (const todo of day.todos) push('할일', todo.text, `${day.date}-todo-${todo.id}`)
     for (const idea of day.ideas) push('아이디어', idea.text, `${day.date}-idea-${idea.id}`)
-    if (day.condition.reason) push('컨디션', day.condition.reason, `${day.date}-condition`)
+    if (day.condition.reason) push('내면 상태', day.condition.reason, `${day.date}-condition`)
     if (day.workout.memo) push('운동', day.workout.memo, `${day.date}-workout`)
     for (const meal of day.diet.meals) push('식사', meal.label, `${day.date}-meal-${meal.id}`)
     for (const it of day.interactions) {
