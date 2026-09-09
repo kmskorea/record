@@ -5,7 +5,8 @@ import { weekday } from './date'
 export type MetricId =
   | 'score'
   | 'sleep'
-  | 'condition'
+  | 'energy'
+  | 'anxiety'
   | 'workout'
   | 'meal'
   | 'weight'
@@ -103,13 +104,23 @@ export const METRICS: MetricDef[] = [
     format: (v) => `${round1(v)}시간`,
   },
   {
-    id: 'condition',
-    label: '컨디션',
-    short: '컨디션',
+    id: 'energy',
+    label: '에너지',
+    short: '에너지',
     color: '#E4572E',
     unit: '',
     domain: [1, 5],
-    get: (d) => d.condition.score,
+    get: (d) => d.condition.energy,
+    format: (v) => `${round1(v)} / 5`,
+  },
+  {
+    id: 'anxiety',
+    label: '불안·스트레스',
+    short: '불안',
+    color: '#B3200B',
+    unit: '',
+    domain: [1, 5],
+    get: (d) => d.condition.anxiety,
     format: (v) => `${round1(v)} / 5`,
   },
   {
@@ -331,7 +342,8 @@ export function hasContent(day: DayRecord | undefined): boolean {
     day.scoreNote.trim() !== '' ||
     day.events.length > 0 ||
     day.timeSlots.some((v) => v !== null) ||
-    day.condition.score !== null ||
+    day.condition.energy !== null ||
+    day.condition.anxiety !== null ||
     day.condition.reason.trim() !== '' ||
     day.sleep.hours !== null ||
     day.workout.did !== null ||

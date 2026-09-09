@@ -20,8 +20,8 @@ import { TimeScoreWidget, TimeShareWidget, UpcomingWidget } from './TimeInsights
 
 const WINDOW = 30
 
-/** 요일별 컨디션 막대는 1~5 척도라 하루 점수 색과 별개로 쓴다. */
-const CONDITION_BAR = { good: '#3D5AFE', ok: '#E8B93B', bad: '#E4572E' }
+/** 요일별 에너지 막대는 1~5 척도라 하루 점수 색과 별개로 쓴다. */
+const ENERGY_BAR = { good: '#3D5AFE', ok: '#E8B93B', bad: '#E4572E' }
 
 function avg(values: (number | null)[]): number | null {
   const nums = values.filter((v): v is number => v !== null)
@@ -47,7 +47,7 @@ export function InsightsPanel({
   const dates = useMemo(() => rangeEndingAt(today, WINDOW), [today])
 
   const stats = useMemo(() => {
-    const conditionSeries = buildSeries(METRIC_BY_ID.condition, dates, days)
+    const energySeries = buildSeries(METRIC_BY_ID.energy, dates, days)
     const sleepSeries = buildSeries(METRIC_BY_ID.sleep, dates, days)
     const todoValues = dates.map((d) => todoRate(days[d]))
     const scoreValues = dates.map((d) => dayScore(days[d]))
@@ -68,11 +68,11 @@ export function InsightsPanel({
       recorded,
       workoutDays,
       avgScore: avg(scoreValues),
-      avgCondition: avg(conditionSeries.map((p) => p.value)),
+      avgEnergy: avg(energySeries.map((p) => p.value)),
       avgSleep: avg(sleepSeries.map((p) => p.value)),
       avgTodo: avg(todoValues),
       dist,
-      weekday: weekdayAverages(conditionSeries),
+      weekday: weekdayAverages(energySeries),
     }
   }, [dates, days, today])
 
@@ -127,7 +127,7 @@ export function InsightsPanel({
             </span>
             <span className="label">평균 수면</span>
             <span className="sub">
-              컨디션 {stats.avgCondition ? stats.avgCondition.toFixed(1) : '—'} / 5
+              에너지 {stats.avgEnergy ? stats.avgEnergy.toFixed(1) : '—'} / 5
             </span>
           </div>
           <div className="tile">
@@ -189,9 +189,9 @@ export function InsightsPanel({
         windowDays={WINDOW}
       />
 
-      <Card title="요일별 컨디션" mark="var(--yellow)" note={`최근 ${WINDOW}일 평균`}>
+      <Card title="요일별 에너지" mark="var(--yellow)" note={`최근 ${WINDOW}일 평균`}>
         {stats.weekday.every((w) => w.avg === null) ? (
-          <Empty>컨디션을 며칠 기록하면 요일 패턴이 보여요.</Empty>
+          <Empty>내면 상태를 며칠 기록하면 요일 패턴이 보여요.</Empty>
         ) : (
           <>
             <div className="weekbars">
@@ -203,10 +203,10 @@ export function InsightsPanel({
                       height: `${w.avg === null ? 4 : barHeight(w.avg)}%`,
                       background: w.avg
                         ? w.avg >= 4
-                          ? CONDITION_BAR.good
+                          ? ENERGY_BAR.good
                           : w.avg >= 3
-                            ? CONDITION_BAR.ok
-                            : CONDITION_BAR.bad
+                            ? ENERGY_BAR.ok
+                            : ENERGY_BAR.bad
                         : 'var(--surface-3)',
                     }}
                     title={w.avg ? `${w.avg.toFixed(1)} / 5 (${w.count}일)` : '기록 없음'}

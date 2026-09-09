@@ -523,5 +523,38 @@ function contentDay(date: string, itemId: string, quote: string, updatedAt: numb
   check('콘텐츠 목록에 사람이 안 섞인다', fresh.data.content.length === 1)
 }
 
+// ── 16. 컨디션이 에너지로 이름만 바뀌어도 숫자는 그대로 남는다 ─────────────
+{
+  const moved = migrate({
+    days: {
+      '2026-09-01': {
+        date: '2026-09-01',
+        condition: { score: 4, reason: '푹 잤다' },
+        updatedAt: 1,
+      },
+      // 이미 새 이름으로 적힌 날은 그대로
+      '2026-09-02': {
+        date: '2026-09-02',
+        condition: { energy: 2, anxiety: 5, reason: '마감' },
+        updatedAt: 1,
+      },
+    },
+  })
+
+  const a = moved.days['2026-09-01'].condition
+  check('옛 컨디션 점수가 에너지로 옮겨진다', a.energy === 4, JSON.stringify(a))
+  check('이유는 그대로', a.reason === '푹 잤다')
+  check('없던 불안 칸은 비어서 생긴다', a.anxiety === null, JSON.stringify(a))
+
+  const b = moved.days['2026-09-02'].condition
+  check('새 이름으로 적힌 날은 건드리지 않는다', b.energy === 2 && b.anxiety === 5, JSON.stringify(b))
+
+  // 1~5 밖의 값은 안 적은 것으로 본다
+  const junk = migrate({
+    days: { '2026-09-03': { date: '2026-09-03', condition: { score: 9, anxiety: 'x' } } },
+  }).days['2026-09-03'].condition
+  check('척도를 벗어난 값은 비운다', junk.energy === null && junk.anxiety === null, JSON.stringify(junk))
+}
+
 console.log(`\n${pass} passed, ${fail} failed`)
 if (fail > 0) process.exit(1)

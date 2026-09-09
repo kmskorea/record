@@ -448,43 +448,71 @@ export function SleepSection({ date }: SectionProps) {
   )
 }
 
-// ── 컨디션 ───────────────────────────────────────────────────────────────────
+// ── 내면 상태 ────────────────────────────────────────────────────────────────
 
-const CONDITION_COLOR = (v: Level | null) =>
+/** 에너지는 높을수록 좋다. */
+const ENERGY_COLOR = (v: Level | null) =>
   v === null ? undefined : v >= 4 ? 'var(--blue)' : v === 3 ? 'var(--yellow)' : 'var(--accent)'
 
-export function ConditionSection({ date }: SectionProps) {
+/** 불안은 반대다 — 높을수록 나쁘므로 색도 뒤집는다. */
+const ANXIETY_COLOR = (v: Level | null) =>
+  v === null ? undefined : v <= 2 ? 'var(--blue)' : v === 3 ? 'var(--yellow)' : 'var(--accent)'
+
+export function InnerStateSection({ date }: SectionProps) {
   const { getDay, updateDay } = useStore()
   const { condition } = getDay(date)
 
-  const filled = condition.score !== null || condition.reason.trim() !== ''
+  const filled =
+    condition.energy !== null || condition.anxiety !== null || condition.reason.trim() !== ''
   const summary = (
     <>
-      {condition.score !== null ? `${condition.score} / 5` : '—'}
+      {condition.energy === null && condition.anxiety === null && '—'}
+      {condition.energy !== null && `에너지 ${condition.energy}`}
+      {condition.anxiety !== null && (
+        <>
+          {condition.energy !== null && ' · '}
+          {`불안 ${condition.anxiety}`}
+        </>
+      )}
       {condition.reason.trim() && <span className="dim"> · {condition.reason}</span>}
     </>
   )
 
   return (
     <CollapsibleCard
-      title="컨디션"
-      mark={CONDITION_COLOR(condition.score) ?? 'var(--ink-3)'}
+      title="내면 상태"
+      mark={ENERGY_COLOR(condition.energy) ?? 'var(--ink-3)'}
       filled={filled}
       summary={summary}
     >
-      <ScaleInput
-        value={condition.score}
-        color={CONDITION_COLOR(condition.score)}
-        low="별로"
-        high="좋음"
-        onChange={(v) => updateDay(date, (d) => ({ condition: { ...d.condition, score: v } }))}
-      />
+      <div className="field">
+        <span className="field-label">에너지</span>
+        <ScaleInput
+          value={condition.energy}
+          color={ENERGY_COLOR(condition.energy)}
+          low="방전"
+          high="충만"
+          onChange={(v) => updateDay(date, (d) => ({ condition: { ...d.condition, energy: v } }))}
+        />
+      </div>
+
+      <div className="field" style={{ marginTop: 14 }}>
+        <span className="field-label">불안·스트레스</span>
+        <ScaleInput
+          value={condition.anxiety}
+          color={ANXIETY_COLOR(condition.anxiety)}
+          low="평온"
+          high="극도"
+          onChange={(v) => updateDay(date, (d) => ({ condition: { ...d.condition, anxiety: v } }))}
+        />
+      </div>
+
       <label className="field" style={{ marginTop: 14 }}>
         <span className="field-label">왜 그랬을까?</span>
         <textarea
           className="textarea"
           style={{ minHeight: 72 }}
-          placeholder="컨디션이 이런 이유를 짧게 남겨두면 나중에 패턴이 보여요."
+          placeholder="오늘 안이 이랬던 이유를 짧게 남겨두면 나중에 패턴이 보여요."
           value={condition.reason}
           onChange={(e) =>
             updateDay(date, (d) => ({ condition: { ...d.condition, reason: e.target.value } }))

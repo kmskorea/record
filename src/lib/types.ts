@@ -2,7 +2,7 @@
 
 export type ISODate = string
 
-/** 1~5 단계 척도. 컨디션, 식사량, 영양 섭취 등에 공통으로 쓴다. */
+/** 1~5 단계 척도. 에너지, 불안, 식사량, 영양 섭취 등에 공통으로 쓴다. */
 export type Level = 1 | 2 | 3 | 4 | 5
 
 export type Intensity = 'low' | 'mid' | 'high'
@@ -173,8 +173,16 @@ export interface Sleep {
   wakeTime: string | null
 }
 
-export interface Condition {
-  score: Level | null
+/**
+ * 그날의 내면 상태. 저장된 이름(day.condition)은 컨디션 하나만 있던 시절
+ * 그대로 둔다 — 이름을 바꾸자고 예전 기록을 건드릴 이유가 없다.
+ */
+export interface InnerState {
+  /** 예전의 '컨디션'. 화면에서는 에너지(방전 ↔ 충만) */
+  energy: Level | null
+  /** 불안·스트레스. 1 평온 ~ 5 극도 */
+  anxiety: Level | null
+  /** 왜 그랬을까 */
   reason: string
 }
 
@@ -275,7 +283,7 @@ export interface DayRecord {
   date: ISODate
   todos: Todo[]
   sleep: Sleep
-  condition: Condition
+  condition: InnerState
   ideas: Idea[]
   workout: Workout
   weight: number | null
@@ -373,7 +381,7 @@ export function emptyDay(date: ISODate): DayRecord {
     date,
     todos: [],
     sleep: { hours: null, bedTime: null, wakeTime: null },
-    condition: { score: null, reason: '' },
+    condition: { energy: null, anxiety: null, reason: '' },
     ideas: [],
     workout: {
       did: null,

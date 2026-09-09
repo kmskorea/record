@@ -6,6 +6,8 @@ import type {
   DayEvent,
   DayRecord,
   ISODate,
+  InnerState,
+  Level,
   Person,
   TimeCategory,
   Todo,
@@ -57,6 +59,23 @@ function normalizeLog(raw: unknown): ContentLog {
     rating: positive(r.rating),
     note: typeof r.note === 'string' ? r.note : (r.thought ?? ''),
     at: typeof r.at === 'number' ? r.at : 0,
+  }
+}
+
+function level(v: unknown): Level | null {
+  return v === 1 || v === 2 || v === 3 || v === 4 || v === 5 ? v : null
+}
+
+/**
+ * 내면 상태. 에너지는 '컨디션'이라는 이름으로 score에 들어 있던 값이다.
+ * 이름만 바뀌었으므로 옛 기록의 숫자를 그대로 물려받는다.
+ */
+function normalizeInnerState(raw: unknown, base: InnerState): InnerState {
+  const c = (raw ?? {}) as Partial<InnerState> & { score?: unknown }
+  return {
+    energy: level(c.energy ?? c.score),
+    anxiety: level(c.anxiety),
+    reason: typeof c.reason === 'string' ? c.reason : base.reason,
   }
 }
 
@@ -116,7 +135,7 @@ export function normalizeDay(date: ISODate, raw: unknown): DayRecord {
         ? (d as { readings: unknown[] }).readings.map(normalizeLog)
         : base.contentLogs,
     sleep: { ...base.sleep, ...(d.sleep ?? {}) },
-    condition: { ...base.condition, ...(d.condition ?? {}) },
+    condition: normalizeInnerState(d.condition, base.condition),
     workout: normalizeWorkout(d.workout, base.workout),
     diet: {
       ...base.diet,
