@@ -2028,6 +2028,30 @@ input[type='number'] {
   color: var(--ink-3);
 }
 
+/* 유형 정리 중에만 나오는 삭제 단추. 평소에는 칩만 보인다. */
+.paint-chip-wrap {
+  position: relative;
+  display: inline-flex;
+}
+
+.paint-chip-x {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: var(--accent);
+  color: var(--on-accent);
+  font-size: 14px;
+  font-weight: 800;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 0 0 2px var(--surface);
+}
+
 /* ── 콘텐츠 ───────────────────────────────────────────────────────────────── */
 /* 작품은 사람이 아니다. 검색 화면에서 같은 자리에 나란히 놓이므로
    동그라미 대신 책등에 가까운 모서리로 한눈에 구분되게 한다. */

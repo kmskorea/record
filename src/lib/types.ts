@@ -65,6 +65,8 @@ export const ITEM_FIELDS: ContentField[] = ['url']
 export interface ContentKindDef {
   id: string
   label: string
+  /** 기기 간 최신본 판정 기준 */
+  updatedAt: number
   /** 제목 옆에 적는 것. 유형마다 부르는 이름이 다르다 */
   bylineLabel: string
   /** 소감 칸의 이름. 책은 '생각', 영상은 '영감'이 자연스럽다 */
@@ -98,6 +100,7 @@ export const BUILTIN_CONTENT_KINDS: ContentKindDef[] = [
     newLabel: '새 책',
     fields: ['pages', 'quote'],
     colorIndex: 0,
+    updatedAt: 0,
   },
   {
     id: 'movie',
@@ -108,6 +111,7 @@ export const BUILTIN_CONTENT_KINDS: ContentKindDef[] = [
     newLabel: '새 영화',
     fields: ['rating'],
     colorIndex: 1,
+    updatedAt: 0,
   },
   {
     id: 'video',
@@ -118,6 +122,7 @@ export const BUILTIN_CONTENT_KINDS: ContentKindDef[] = [
     newLabel: '새 영상',
     fields: ['url'],
     colorIndex: 2,
+    updatedAt: 0,
   },
 ]
 
@@ -255,6 +260,8 @@ export interface TimeCategory {
   id: string
   label: string
   colorIndex: number
+  /** 기기 간 최신본 판정 기준 */
+  updatedAt: number
 }
 
 export const TIME_COLORS = [
@@ -333,6 +340,16 @@ export interface AppData {
   deletedPeople: Record<string, number>
   /** 지운 콘텐츠의 묘비. 사람과 같은 이유다. */
   deletedContent: Record<string, number>
+  /**
+   * 지운 시간 유형·콘텐츠 유형의 묘비.
+   *
+   * 이 목록들은 다른 기록이 id로 가리키는 것이라(시간표 칸이 유형 id를 담는다)
+   * 한쪽 기기의 옛 목록이 다른 쪽을 덮으면 칠해둔 시간이 통째로 안 보이게 된다.
+   * 그래서 설정 뭉치에 담아 통째로 덮어쓰지 않고, 사람·콘텐츠와 같은 줄 단위
+   * 병합을 쓴다.
+   */
+  deletedTimeCategories: Record<string, number>
+  deletedContentKinds: Record<string, number>
   /** 사용자가 직접 만든 콘텐츠 유형 (팟캐스트, 전시 …) */
   customContentKinds: ContentKindDef[]
   /** 알림 시각·운동 부위 같은 설정의 최종 수정 시각 */

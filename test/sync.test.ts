@@ -556,5 +556,165 @@ function contentDay(date: string, itemId: string, quote: string, updatedAt: numb
   check('척도를 벗어난 값은 비운다', junk.energy === null && junk.anxiety === null, JSON.stringify(junk))
 }
 
+// ── 17. 한 기기의 옛 목록이 다른 기기의 시간 유형을 지우지 않는다 ─────────
+//
+// 실제로 겪은 사고다. 설정을 통째로 덮어쓰던 시절, 휴대폰이 알림만 켜도
+// 노트북의 시간 유형이 서버에서 통째로 사라졌고, 그러면 칠해둔 시간표가
+// 유형 id를 못 찾아 전부 안 칠해진 것처럼 보였다.
+{
+  const cat = (id: string, label: string, colorIndex: number, updatedAt = 1000) => ({
+    id,
+    label,
+    colorIndex,
+    updatedAt,
+  })
+  const painted = (date: string, id: string, updatedAt: number) => {
+    const d = emptyDay(date)
+    return {
+      ...d,
+      timeSlots: d.timeSlots.map((_, i) => (i >= 18 && i < 30 ? id : null)),
+      updatedAt,
+    }
+  }
+
+  const store: Store = { days: [], objects: [], settings: null }
+  const laptop = makeData({
+    timeCategories: [cat('c1', '연구실', 0), cat('c2', '휴식', 1)],
+    days: { '2026-09-01': painted('2026-09-01', 'c1', 1000) },
+  })
+  await syncOnce(fakeClient(store), laptop, markEverythingDirty(laptop, emptySyncState()))
+  check('시간 유형이 서버로 올라간다', rowsOf(store, 'timeCategory').length === 2)
+
+  // 휴대폰: 유형을 아직 못 받은 채로 설정만 최신이다(알림을 켰다든지)
+  const phone = makeData({ timeCategories: [], settingsUpdatedAt: 5000 })
+  const afterPhone = await syncOnce(fakeClient(store), phone, {
+    ...emptySyncState(),
+    settingsDirty: true,
+  })
+  check('휴대폰이 유형을 지우지 않는다', rowsOf(store, 'timeCategory').length === 2)
+  check(
+    '오히려 휴대폰이 유형을 받아간다',
+    afterPhone.data.timeCategories.map((c) => c.label).sort().join(',') === '연구실,휴식',
+    JSON.stringify(afterPhone.data.timeCategories),
+  )
+
+  const afterLaptop = await syncOnce(fakeClient(store), laptop, emptySyncState())
+  check('노트북의 유형도 그대로', afterLaptop.data.timeCategories.length === 2)
+  check(
+    '칠해둔 시간표도 그대로',
+    afterLaptop.data.days['2026-09-01'].timeSlots.filter(Boolean).length === 12,
+  )
+}
+
+// ── 18. 지운 시간 유형은 다른 기기에서 되살아나지 않는다 ───────────────────
+{
+  const store: Store = { days: [], objects: [], settings: null }
+  const a = makeData({ timeCategories: [{ id: 'c1', label: '연구실', colorIndex: 0, updatedAt: 1000 }] })
+  await syncOnce(fakeClient(store), a, markEverythingDirty(a, emptySyncState()))
+  const b = await syncOnce(fakeClient(store), makeData({}), emptySyncState())
+  check('B가 유형을 받았다', b.data.timeCategories.length === 1)
+
+  const deleted = makeData({ timeCategories: [], deletedTimeCategories: { c1: 5000 } })
+  await syncOnce(fakeClient(store), deleted, {
+    ...emptySyncState(),
+    dirtyTimeCategories: { c1: true },
+  })
+  const afterB = await syncOnce(fakeClient(store), b.data, b.state)
+  check('B에서도 사라진다', afterB.data.timeCategories.length === 0, JSON.stringify(afterB.data.timeCategories))
+}
+
+// ── 19. 유형을 잃어도 칠해둔 시간은 화면에서 사라지지 않는다 ───────────────
+//
+// 마지막 방어선. 어떤 이유로든 목록이 비면, 칸에 남은 id로 자리를 되살린다.
+{
+  const orphaned = migrate({
+    timeCategories: [],
+    days: {
+      '2026-09-01': {
+        date: '2026-09-01',
+        timeSlots: Array.from({ length: 48 }, (_, i) => (i >= 10 && i < 20 ? 'gone-1' : null)),
+        updatedAt: 1,
+      },
+    },
+  })
+  check('없어진 유형의 자리가 생긴다', orphaned.timeCategories.length === 1, JSON.stringify(orphaned.timeCategories))
+  check('id는 칸이 가리키던 그대로', orphaned.timeCategories[0].id === 'gone-1')
+  check('칸은 손대지 않는다', orphaned.days['2026-09-01'].timeSlots.filter(Boolean).length === 10)
+  check(
+    '되살린 자리는 언제나 진짜에게 진다',
+    orphaned.timeCategories[0].updatedAt === 0,
+    JSON.stringify(orphaned.timeCategories[0]),
+  )
+
+  // 진짜 유형이 서버에서 내려오면 이름과 색까지 제자리로
+  const store: Store = { days: [], objects: [], settings: null }
+  store.objects.push({
+    kind: 'timeCategory',
+    id: 'gone-1',
+    data: { id: 'gone-1', label: '연구실', colorIndex: 3, updatedAt: 9000 },
+    deleted: false,
+    updated_at: 9000,
+    server_updated_at: '2026-09-09T00:00:00.000Z',
+  })
+  const healed = await syncOnce(fakeClient(store), orphaned, emptySyncState())
+  check('이름이 제자리로 돌아온다', healed.data.timeCategories[0].label === '연구실', JSON.stringify(healed.data.timeCategories))
+  check('자리가 중복되지 않는다', healed.data.timeCategories.length === 1)
+
+  // 시각이 없는 옛 유형도 되살린 자리를 이겨야 한다
+  const legacyWins = await syncOnce(
+    fakeClient({
+      days: [],
+      objects: [
+        {
+          kind: 'timeCategory',
+          id: 'gone-1',
+          data: { id: 'gone-1', label: '옛 유형', colorIndex: 2 },
+          deleted: false,
+          updated_at: 1,
+          server_updated_at: '2026-09-09T00:00:00.000Z',
+        },
+      ],
+      settings: null,
+    }),
+    migrate({
+      timeCategories: [],
+      days: {
+        '2026-09-01': {
+          date: '2026-09-01',
+          timeSlots: Array.from({ length: 48 }, (_, i) => (i < 4 ? 'gone-1' : null)),
+          updatedAt: 1,
+        },
+      },
+    }),
+    emptySyncState(),
+  )
+  check(
+    '시각 없는 옛 유형도 빈 자리를 이긴다',
+    legacyWins.data.timeCategories[0]?.label === '옛 유형',
+    JSON.stringify(legacyWins.data.timeCategories),
+  )
+
+  // 일부러 지운 유형은 칸도 함께 비므로 되살아나지 않는다
+  const cleanly = migrate({ timeCategories: [], days: { '2026-09-02': { date: '2026-09-02', updatedAt: 1 } } })
+  check('빈 시간표는 아무것도 되살리지 않는다', cleanly.timeCategories.length === 0)
+}
+
+// ── 20. 운동 부위는 합집합으로 합쳐 어느 기기 것도 안 잃는다 ───────────────
+{
+  const store: Store = { days: [], objects: [], settings: null }
+  const a = makeData({ customWorkoutParts: ['스트레칭'], settingsUpdatedAt: 1000 })
+  await syncOnce(fakeClient(store), a, { ...emptySyncState(), settingsDirty: true })
+
+  const b = makeData({ customWorkoutParts: ['필라테스'], settingsUpdatedAt: 5000 })
+  await syncOnce(fakeClient(store), b, { ...emptySyncState(), settingsDirty: true })
+
+  const back = await syncOnce(fakeClient(store), a, emptySyncState())
+  check(
+    '두 기기의 부위가 모두 남는다',
+    back.data.customWorkoutParts.sort().join(',') === '스트레칭,필라테스',
+    JSON.stringify(back.data.customWorkoutParts),
+  )
+}
+
 console.log(`\n${pass} passed, ${fail} failed`)
 if (fail > 0) process.exit(1)

@@ -1,7 +1,6 @@
 import type {
   AppData,
   ContentItem,
-  ContentKindDef,
   ContentLog,
   DayEvent,
   DayRecord,
@@ -9,12 +8,13 @@ import type {
   InnerState,
   Level,
   Person,
-  TimeCategory,
   Todo,
   Workout,
 } from './types'
+import type { TimeCategory } from './types'
 import {
   DEFAULT_NOTIFICATIONS,
+  TIME_COLORS,
   LEGACY_RUNNING_PART,
   RUNNING_PART,
   SLOT_COUNT,
@@ -38,6 +38,8 @@ export function emptyData(): AppData {
     timeCategories: [],
     deletedPeople: {},
     deletedContent: {},
+    deletedTimeCategories: {},
+    deletedContentKinds: {},
     customContentKinds: [],
     settingsUpdatedAt: 0,
   }
@@ -77,6 +79,43 @@ function normalizeInnerState(raw: unknown, base: InnerState): InnerState {
     anxiety: level(c.anxiety),
     reason: typeof c.reason === 'string' ? c.reason : base.reason,
   }
+}
+
+/**
+ * 시간표 칸에는 유형 id만 들어 있어서, 유형 목록이 비면 칠해둔 시간이
+ * 통째로 안 보인다. 지워진 게 아니라 색을 못 찾는 것뿐이므로, 목록에 없는
+ * id를 발견하면 자리라도 만들어 되살린다.
+ *
+ * 같은 id로 만들기 때문에, 진짜 유형이 서버에서 내려오면 이름과 색까지
+ * 제자리로 돌아온다. updatedAt이 0이라 항상 진짜 쪽이 이긴다.
+ *
+ * 일부러 지운 유형은 칸도 같이 비우므로(deleteTimeCategory) 되살아나지 않는다.
+ */
+export function recoverOrphanCategories(
+  days: Record<ISODate, DayRecord>,
+  categories: TimeCategory[],
+): TimeCategory[] {
+  const known = new Set(categories.map((c) => c.id))
+  const orphans: string[] = []
+  for (const day of Object.values(days)) {
+    for (const id of day.timeSlots) {
+      if (id && !known.has(id)) {
+        known.add(id)
+        orphans.push(id)
+      }
+    }
+  }
+  if (orphans.length === 0) return categories
+  console.warn(`시간 유형 ${orphans.length}개를 칸에서 되살렸습니다`, orphans)
+  return [
+    ...categories,
+    ...orphans.map((id, i) => ({
+      id,
+      label: `이름 없는 유형 ${i + 1}`,
+      colorIndex: (categories.length + i) % TIME_COLORS.length,
+      updatedAt: 0,
+    })),
+  ]
 }
 
 function pickTombstones(raw: unknown): Record<string, number> {
@@ -283,18 +322,25 @@ export function migrate(input: unknown): AppData {
             typeof c === 'string' && !(WORKOUT_PARTS as readonly string[]).includes(c),
         )
       : [],
-    timeCategories: Array.isArray(raw.timeCategories)
-      ? (raw.timeCategories.filter(
-          (c) => c && typeof c.id === 'string' && typeof c.label === 'string',
-        ) as TimeCategory[])
-      : [],
+    timeCategories: recoverOrphanCategories(
+      days,
+      Array.isArray(raw.timeCategories)
+        ? raw.timeCategories
+            .filter((c) => c && typeof c.id === 'string' && typeof c.label === 'string')
+            // 시각이 없는 옛 유형은 1로 둔다. 0은 칸에서 되살린 빈 자리 몫이라,
+            // 진짜 유형이 내려오면 그 자리를 이길 수 있어야 한다.
+            .map((c) => ({ ...c, updatedAt: typeof c.updatedAt === 'number' ? c.updatedAt : 1 }))
+        : [],
+    ),
     deletedPeople:
       raw.deletedPeople && typeof raw.deletedPeople === 'object' ? raw.deletedPeople : {},
     deletedContent: pickTombstones(raw.deletedContent ?? (raw as { deletedBooks?: unknown }).deletedBooks),
+    deletedTimeCategories: pickTombstones(raw.deletedTimeCategories),
+    deletedContentKinds: pickTombstones(raw.deletedContentKinds),
     customContentKinds: Array.isArray(raw.customContentKinds)
-      ? (raw.customContentKinds.filter(
-          (k) => k && typeof k.id === 'string' && typeof k.label === 'string',
-        ) as ContentKindDef[])
+      ? raw.customContentKinds
+          .filter((k) => k && typeof k.id === 'string' && typeof k.label === 'string')
+          .map((k) => ({ ...k, updatedAt: typeof k.updatedAt === 'number' ? k.updatedAt : 1 }))
       : [],
     settingsUpdatedAt: typeof raw.settingsUpdatedAt === 'number' ? raw.settingsUpdatedAt : 0,
   }
@@ -324,6 +370,8 @@ export interface SyncState {
   dirtyDays: Record<ISODate, true>
   dirtyPeople: Record<string, true>
   dirtyContent: Record<string, true>
+  dirtyTimeCategories: Record<string, true>
+  dirtyContentKinds: Record<string, true>
   settingsDirty: boolean
   /** 증분 조회 커서 (서버 시각) */
   cursor: string | null
@@ -335,6 +383,8 @@ export function emptySyncState(): SyncState {
     dirtyDays: {},
     dirtyPeople: {},
     dirtyContent: {},
+    dirtyTimeCategories: {},
+    dirtyContentKinds: {},
     settingsDirty: false,
     cursor: null,
     lastSyncedAt: null,
