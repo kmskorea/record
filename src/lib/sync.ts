@@ -52,20 +52,85 @@ interface DayRow {
   server_updated_at: string
 }
 
-interface PersonRow {
+/**
+ * 날짜에 매달리지 않고 따로 서 있는 것들 — 사람, 콘텐츠, 앞으로 무엇이든.
+ * 한 테이블에 kind로 구분해 담는다. 새로운 종류가 생겨도 서버 스키마는
+ * 그대로라, 앱을 고칠 때마다 SQL을 다시 돌릴 일이 없다.
+ */
+export const PERSON_KIND = 'person'
+export const CONTENT_KIND = 'content'
+
+interface ObjectRow {
+  kind: string
   id: string
-  data: Person
+  data: Record<string, unknown>
   deleted: boolean
   updated_at: number
   server_updated_at: string
 }
 
-interface ContentRow {
+interface Identified {
   id: string
-  data: ContentItem
-  deleted: boolean
-  updated_at: number
-  server_updated_at: string
+  updatedAt: number
+}
+
+/** 올릴 한 줄. 목록에 없으면 지운 것이므로 묘비를 올린다. */
+function outgoing<T extends Identified>(
+  kind: string,
+  id: string,
+  byId: Map<string, T>,
+  tombstones: Record<string, number>,
+) {
+  const item = byId.get(id)
+  if (item) {
+    return { kind, id, data: item, deleted: false, updated_at: item.updatedAt || Date.now() }
+  }
+  // 줄을 없애지 말고 지웠다고 표시한다. 그냥 지우면 다른 기기가 되살린다.
+  return { kind, id, data: { id }, deleted: true, updated_at: tombstones[id] ?? Date.now() }
+}
+
+/**
+ * 받아온 줄을 로컬 목록에 합친다. 사람이든 콘텐츠든 규칙이 같다 —
+ * 더 새것만 이기고, 지운 것은 묘비를 남기고, 아직 못 올린 것은 건드리지 않는다.
+ */
+function mergeIncoming<T extends Identified>(
+  local: T[],
+  tombstones: Record<string, number>,
+  rows: ObjectRow[],
+  dirty: Record<string, true>,
+): { items: T[]; tombstones: Record<string, number>; changed: boolean } {
+  const items = [...local]
+  const graves = { ...tombstones }
+  const indexById = new Map(items.map((x, i) => [x.id, i]))
+  let changed = false
+
+  for (const row of rows) {
+    if (dirty[row.id]) continue
+    const at = indexById.get(row.id)
+    const localAt = (at === undefined ? undefined : items[at]?.updatedAt) ?? graves[row.id] ?? 0
+    if (row.updated_at <= localAt) continue
+
+    if (row.deleted) {
+      if (at !== undefined) {
+        items.splice(at, 1)
+        indexById.clear()
+        items.forEach((x, i) => indexById.set(x.id, i))
+        changed = true
+      }
+      graves[row.id] = row.updated_at
+    } else {
+      const merged = { ...row.data, id: row.id, updatedAt: row.updated_at } as unknown as T
+      if (at === undefined) {
+        indexById.set(row.id, items.length)
+        items.push(merged)
+      } else {
+        items[at] = merged
+      }
+      delete graves[row.id]
+      changed = true
+    }
+  }
+  return { items, tombstones: graves, changed }
 }
 
 interface SettingsRow {
@@ -140,29 +205,6 @@ export async function syncOnce(
     nextState.dirtyDays = remaining
   }
 
-  const dirtyPeople = Object.keys(state.dirtyPeople)
-  if (dirtyPeople.length > 0) {
-    const byId = new Map(next.people.map((p) => [p.id, p]))
-    const rows = dirtyPeople.map((id) => {
-      const person = byId.get(id)
-      if (person) {
-        return { id, data: person, deleted: false, updated_at: person.updatedAt || Date.now() }
-      }
-      // 목록에 없으면 지운 사람이다. 줄을 없애지 말고 지웠다고 표시한다.
-      return {
-        id,
-        data: { id },
-        deleted: true,
-        updated_at: next.deletedPeople[id] ?? Date.now(),
-      }
-    })
-    const { error } = await client.rpc('merge_people', { rows })
-    if (error) throw error
-    const remaining = { ...nextState.dirtyPeople }
-    for (const id of dirtyPeople) delete remaining[id]
-    nextState.dirtyPeople = remaining
-  }
-
   if (state.settingsDirty) {
     const { error } = await client.rpc('merge_settings', {
       payload: settingsPayload(next),
@@ -172,28 +214,27 @@ export async function syncOnce(
     nextState.settingsDirty = false
   }
 
-  // 콘텐츠는 맨 뒤에 올린다. 스키마가 아직 없는 계정이라도 앞의 것들은
-  // 이미 서버에 닿은 뒤라 하루 기록이 발이 묶이지 않는다.
+  // 따로 서 있는 것들(사람·콘텐츠)은 맨 뒤에 한 번에 올린다. objects 테이블이
+  // 아직 없는 계정이라도 앞의 것들은 이미 서버에 닿은 뒤라, 하루 기록이
+  // 발이 묶이지 않는다.
   let schemaOutdated = false
+  const dirtyPeople = Object.keys(state.dirtyPeople)
   const dirtyContent = Object.keys(state.dirtyContent)
-  if (dirtyContent.length > 0) {
-    const byId = new Map(next.content.map((c) => [c.id, c]))
-    const rows = dirtyContent.map((id) => {
-      const item = byId.get(id)
-      if (item) {
-        return { id, data: item, deleted: false, updated_at: item.updatedAt || Date.now() }
-      }
-      return { id, data: { id }, deleted: true, updated_at: next.deletedContent[id] ?? Date.now() }
-    })
-    const { error } = await client.rpc('merge_content', { rows })
+  if (dirtyPeople.length > 0 || dirtyContent.length > 0) {
+    const peopleById = new Map(next.people.map((p) => [p.id, p]))
+    const contentById = new Map(next.content.map((c) => [c.id, c]))
+    const rows = [
+      ...dirtyPeople.map((id) => outgoing(PERSON_KIND, id, peopleById, next.deletedPeople)),
+      ...dirtyContent.map((id) => outgoing(CONTENT_KIND, id, contentById, next.deletedContent)),
+    ]
+    const { error } = await client.rpc('merge_objects', { rows })
     if (error && !isMissingSchema(error)) throw error
     if (error) {
       // 못 올렸으니 표시를 지우지 않는다. 스키마를 실행하면 그대로 올라간다.
       schemaOutdated = true
     } else {
-      const remaining = { ...nextState.dirtyContent }
-      for (const id of dirtyContent) delete remaining[id]
-      nextState.dirtyContent = remaining
+      nextState.dirtyPeople = {}
+      nextState.dirtyContent = {}
     }
   }
 
@@ -209,22 +250,19 @@ export async function syncOnce(
   const { data: dayRows, error: dayErr } = await dayQuery
   if (dayErr) throw dayErr
 
-  let personQuery = client.from('people').select('id, data, deleted, updated_at, server_updated_at')
-  if (since) personQuery = personQuery.gt('server_updated_at', since)
-  const { data: personRows, error: personErr } = await personQuery
-  if (personErr) throw personErr
-
   const { data: settingsRow, error: settingsErr } = await client
     .from('settings')
     .select('data, updated_at')
     .maybeSingle()
   if (settingsErr) throw settingsErr
 
-  let contentQuery = client.from('content').select('id, data, deleted, updated_at, server_updated_at')
-  if (since) contentQuery = contentQuery.gt('server_updated_at', since)
-  const { data: contentRows, error: contentErr } = await contentQuery
-  if (contentErr && !isMissingSchema(contentErr)) throw contentErr
-  if (contentErr) schemaOutdated = true
+  let objectQuery = client
+    .from('objects')
+    .select('kind, id, data, deleted, updated_at, server_updated_at')
+  if (since) objectQuery = objectQuery.gt('server_updated_at', since)
+  const { data: objectRows, error: objectErr } = await objectQuery
+  if (objectErr && !isMissingSchema(objectErr)) throw objectErr
+  if (objectErr) schemaOutdated = true
 
   // ── 3. 병합 ────────────────────────────────────────────────────────────────
   let changed = false
@@ -244,75 +282,32 @@ export async function syncOnce(
     }
   }
 
-  const people = [...next.people]
-  const deletedPeople = { ...next.deletedPeople }
-  const indexById = new Map(people.map((p, i) => [p.id, i]))
-  for (const row of (personRows ?? []) as PersonRow[]) {
+  // 종류별로 나눠서, 서로 같은 규칙으로 합친다.
+  const incoming: Record<string, ObjectRow[]> = {}
+  for (const row of (objectRows ?? []) as ObjectRow[]) {
     if (row.server_updated_at && (!cursor || row.server_updated_at > cursor)) {
       cursor = row.server_updated_at
     }
-    if (nextState.dirtyPeople[row.id]) continue
-    const at = indexById.get(row.id)
-    const local = at === undefined ? undefined : people[at]
-    const localAt = local?.updatedAt ?? deletedPeople[row.id] ?? 0
-    if (row.updated_at <= localAt) continue
-
-    if (row.deleted) {
-      if (at !== undefined) {
-        people.splice(at, 1)
-        indexById.clear()
-        people.forEach((p, i) => indexById.set(p.id, i))
-        changed = true
-      }
-      deletedPeople[row.id] = row.updated_at
-    } else {
-      const person: Person = { ...row.data, id: row.id, updatedAt: row.updated_at }
-      if (at === undefined) {
-        indexById.set(row.id, people.length)
-        people.push(person)
-      } else {
-        people[at] = person
-      }
-      delete deletedPeople[row.id]
-      changed = true
-    }
+    ;(incoming[row.kind] ??= []).push(row)
   }
 
-  // 콘텐츠는 사람과 같은 규칙으로 합친다. 지운 것은 묘비를 남기고,
-  // 서버에 없다는 이유만으로 로컬에서 지우지 않는다.
-  const content = [...next.content]
-  const deletedContent = { ...next.deletedContent }
-  const contentIndex = new Map(content.map((c, i) => [c.id, i]))
-  for (const row of (contentRows ?? []) as ContentRow[]) {
-    if (row.server_updated_at && (!cursor || row.server_updated_at > cursor)) {
-      cursor = row.server_updated_at
-    }
-    if (nextState.dirtyContent[row.id]) continue
-    const at = contentIndex.get(row.id)
-    const localAt =
-      (at === undefined ? undefined : content[at]?.updatedAt) ?? deletedContent[row.id] ?? 0
-    if (row.updated_at <= localAt) continue
-
-    if (row.deleted) {
-      if (at !== undefined) {
-        content.splice(at, 1)
-        contentIndex.clear()
-        content.forEach((c, i) => contentIndex.set(c.id, i))
-        changed = true
-      }
-      deletedContent[row.id] = row.updated_at
-    } else {
-      const item: ContentItem = { ...row.data, id: row.id, updatedAt: row.updated_at }
-      if (at === undefined) {
-        contentIndex.set(row.id, content.length)
-        content.push(item)
-      } else {
-        content[at] = item
-      }
-      delete deletedContent[row.id]
-      changed = true
-    }
-  }
+  const mergedPeople = mergeIncoming<Person>(
+    next.people,
+    next.deletedPeople,
+    incoming[PERSON_KIND] ?? [],
+    nextState.dirtyPeople,
+  )
+  const mergedContent = mergeIncoming<ContentItem>(
+    next.content,
+    next.deletedContent,
+    incoming[CONTENT_KIND] ?? [],
+    nextState.dirtyContent,
+  )
+  const people = mergedPeople.items
+  const deletedPeople = mergedPeople.tombstones
+  const content = mergedContent.items
+  const deletedContent = mergedContent.tombstones
+  changed = changed || mergedPeople.changed || mergedContent.changed
 
   let notifications = next.notifications
   let customWorkoutParts = next.customWorkoutParts
