@@ -1,6 +1,6 @@
 import { syncOnce, markEverythingDirty, pendingCount } from '../src/lib/sync'
 import { emptySyncState, migrate, type SyncState } from '../src/lib/storage'
-import { emptyDay, type AppData, type Book, type Person } from '../src/lib/types'
+import { emptyDay, type AppData, type ContentItem, type Person } from '../src/lib/types'
 
 let pass = 0
 let fail = 0
@@ -13,7 +13,7 @@ const check = (name: string, ok: boolean, extra = '') => {
 interface Store {
   days: any[]
   people: any[]
-  books: any[]
+  content: any[]
   settings: any | null
 }
 
@@ -26,14 +26,14 @@ const missingSchema = (what: string) => ({
   message: `Could not find the table 'public.${what}' in the schema cache`,
 })
 
-function fakeClient(store: Store, opts: { failRpc?: string; noBooks?: boolean } = {}) {
+function fakeClient(store: Store, opts: { failRpc?: string; noContent?: boolean } = {}) {
   const client: any = {
     // supabase/schema.sql의 merge_* 함수와 같은 규칙: 더 새것일 때만 내용을 바꾸고,
     // 바꾸지 않더라도 server_updated_at은 항상 올린다.
     rpc(fn: string, args: any) {
       if (opts.failRpc === fn) return Promise.resolve({ error: new Error(`${fn} 실패`) })
-      if (opts.noBooks && fn === 'merge_books') {
-        return Promise.resolve({ error: missingSchema('merge_books') })
+      if (opts.noContent && fn === 'merge_content') {
+        return Promise.resolve({ error: missingSchema('merge_content') })
       }
       if (fn === 'merge_settings') {
         const incoming = { data: args.payload, updated_at: args.at }
@@ -45,7 +45,7 @@ function fakeClient(store: Store, opts: { failRpc?: string; noBooks?: boolean } 
         }
         return Promise.resolve({ error: null })
       }
-      const table = fn === 'merge_days' ? 'days' : fn === 'merge_books' ? 'books' : 'people'
+      const table = fn === 'merge_days' ? 'days' : fn === 'merge_content' ? 'content' : 'people'
       const key = table === 'days' ? 'date' : 'id'
       const arr = (store as any)[table] as any[]
       for (const row of args.rows) {
@@ -67,14 +67,14 @@ function fakeClient(store: Store, opts: { failRpc?: string; noBooks?: boolean } 
       return Promise.resolve({ error: null })
     },
     from(table: string) {
-      const gone = opts.noBooks && table === 'books'
+      const gone = opts.noContent && table === 'content'
       return {
         select() {
           const rowsFor = () =>
             table === 'settings' ? store.settings : ((store as any)[table] as any[])
           const builder: any = {
             gt(_col: string, value: string) {
-              if (gone) return Promise.resolve({ data: null, error: missingSchema('books') })
+              if (gone) return Promise.resolve({ data: null, error: missingSchema('content') })
               const rows = (rowsFor() as any[]).filter((r) => r.server_updated_at > value)
               return Promise.resolve({ data: rows, error: null })
             },
@@ -83,7 +83,7 @@ function fakeClient(store: Store, opts: { failRpc?: string; noBooks?: boolean } 
             },
             then(resolve: any) {
               const result = gone
-                ? { data: null, error: missingSchema('books') }
+                ? { data: null, error: missingSchema('content') }
                 : { data: rowsFor(), error: null }
               return Promise.resolve(result).then(resolve)
             },
@@ -108,14 +108,16 @@ function person(id: string, name: string, updatedAt: number): Person {
   return { id, name, relation: '친구', colorIndex: 0, createdAt: updatedAt, updatedAt }
 }
 
-function book(id: string, title: string, updatedAt: number): Book {
-  return { id, title, author: '', colorIndex: 0, createdAt: updatedAt, updatedAt }
+function item(id: string, title: string, updatedAt: number, kind = 'book'): ContentItem {
+  return { id, kind, title, byline: '', url: '', colorIndex: 0, createdAt: updatedAt, updatedAt }
 }
 
-function readingDay(date: string, bookId: string, quote: string, updatedAt: number) {
+function contentDay(date: string, itemId: string, quote: string, updatedAt: number) {
   return {
     ...emptyDay(date),
-    readings: [{ id: `r-${date}`, bookId, pages: 30, quote, thought: '', at: updatedAt }],
+    contentLogs: [
+      { id: `r-${date}`, itemId, pages: 30, quote, rating: null, note: '', at: updatedAt },
+    ],
     updatedAt,
   }
 }
@@ -127,7 +129,7 @@ function readingDay(date: string, bookId: string, quote: string, updatedAt: numb
     days: { '2026-09-01': day('2026-09-01', '로컬만 있는 기록', 1000) },
     people: [person('p1', '지현', 1000)],
   })
-  const store: Store = { days: [], people: [], books: [], settings: null }
+  const store: Store = { days: [], people: [], content: [], settings: null }
   const client = fakeClient(store)
   const state = markEverythingDirty(local, emptySyncState())
   const out = await syncOnce(client, local, state)
@@ -151,7 +153,7 @@ function readingDay(date: string, bookId: string, quote: string, updatedAt: numb
       },
     ],
     people: [],
-    books: [],
+    content: [],
     settings: null,
   }
   const out = await syncOnce(fakeClient(store), local, emptySyncState())
@@ -172,7 +174,7 @@ function readingDay(date: string, bookId: string, quote: string, updatedAt: numb
       },
     ],
     people: [],
-    books: [],
+    content: [],
     settings: null,
   }
   const out = await syncOnce(fakeClient(store), local, emptySyncState())
@@ -190,7 +192,7 @@ function readingDay(date: string, bookId: string, quote: string, updatedAt: numb
       },
     ],
     people: [],
-    books: [],
+    content: [],
     settings: null,
   }
   const out = await syncOnce(fakeClient(store), local, emptySyncState())
@@ -211,7 +213,7 @@ function readingDay(date: string, bookId: string, quote: string, updatedAt: numb
       },
     ],
     people: [],
-    books: [],
+    content: [],
     settings: null,
   }
   const state: SyncState = { ...emptySyncState(), dirtyDays: { '2026-09-01': true } }
@@ -224,7 +226,7 @@ function readingDay(date: string, bookId: string, quote: string, updatedAt: numb
 {
   const now = Date.now()
   const local = makeData({ days: { '2026-09-01': day('2026-09-01', '못 올린 기록', now) } })
-  const store: Store = { days: [], people: [], books: [], settings: null }
+  const store: Store = { days: [], people: [], content: [], settings: null }
   const state: SyncState = { ...emptySyncState(), dirtyDays: { '2026-09-01': true } }
   let threw = false
   try {
@@ -250,7 +252,7 @@ function readingDay(date: string, bookId: string, quote: string, updatedAt: numb
     people: [
       { id: 'p1', data: person('p1', '지현', 1000), deleted: false, updated_at: 1000, server_updated_at: '2026-09-01T00:00:00.000Z' },
     ],
-    books: [],
+    content: [],
     settings: null,
   }
   const state: SyncState = { ...emptySyncState(), dirtyPeople: { p1: true } }
@@ -266,7 +268,7 @@ function readingDay(date: string, bookId: string, quote: string, updatedAt: numb
     people: [
       { id: 'p1', data: { id: 'p1' }, deleted: true, updated_at: 7000, server_updated_at: '2026-09-03T00:00:00.000Z' },
     ],
-    books: [],
+    content: [],
     settings: null,
   }
   const out = await syncOnce(fakeClient(store), local, emptySyncState())
@@ -287,7 +289,7 @@ function readingDay(date: string, bookId: string, quote: string, updatedAt: numb
       { date: '2026-09-02', data: day('2026-09-02', 'B-서버', 9000), updated_at: 9000, server_updated_at: '2026-09-02T00:00:00.000Z' },
     ],
     people: [],
-    books: [],
+    content: [],
     settings: null,
   }
   const out = await syncOnce(fakeClient(store), local, emptySyncState())
@@ -321,7 +323,7 @@ function readingDay(date: string, bookId: string, quote: string, updatedAt: numb
       },
     ],
     people: [],
-    books: [],
+    content: [],
     settings: null,
   }
   const state = markEverythingDirty(stale, emptySyncState())
@@ -342,7 +344,7 @@ function readingDay(date: string, bookId: string, quote: string, updatedAt: numb
 // ── 9. 두 기기가 서로 다른 날을 쓰면 둘 다 살아남는다 ──────────────────────
 {
   const deviceA = makeData({ days: { '2026-09-01': day('2026-09-01', 'A가 쓴 날', 1000) } })
-  const store: Store = { days: [], people: [], books: [], settings: null }
+  const store: Store = { days: [], people: [], content: [], settings: null }
   await syncOnce(fakeClient(store), deviceA, markEverythingDirty(deviceA, emptySyncState()))
 
   const deviceB = makeData({ days: { '2026-09-05': day('2026-09-05', 'B가 쓴 날', 2000) } })
@@ -360,85 +362,137 @@ function readingDay(date: string, bookId: string, quote: string, updatedAt: numb
   check('A도 B의 날을 받아온다', outA.data.days['2026-09-05']?.reflection === 'B가 쓴 날')
 }
 
-// ── 10. 책도 기기 사이를 오간다 ────────────────────────────────────────────
+// ── 10. 콘텐츠도 기기 사이를 오간다 ────────────────────────────────────────
 {
-  const store: Store = { days: [], people: [], books: [], settings: null }
+  const store: Store = { days: [], people: [], content: [], settings: null }
   const deviceA = makeData({
-    books: [book('b1', '사피엔스', 1000)],
-    days: { '2026-09-01': readingDay('2026-09-01', 'b1', '역사는 소수의 이야기', 1000) },
+    content: [item('b1', '사피엔스', 1000)],
+    days: { '2026-09-01': contentDay('2026-09-01', 'b1', '역사는 소수의 이야기', 1000) },
   })
   await syncOnce(fakeClient(store), deviceA, markEverythingDirty(deviceA, emptySyncState()))
-  check('책이 서버로 올라간다', store.books.length === 1 && store.books[0].id === 'b1')
+  check('작품이 서버로 올라간다', store.content.length === 1 && store.content[0].id === 'b1')
 
   const deviceB = makeData({})
   const outB = await syncOnce(fakeClient(store), deviceB, emptySyncState())
-  check('다른 기기가 책을 받아온다', outB.data.books[0]?.title === '사피엔스')
+  check('다른 기기가 작품을 받아온다', outB.data.content[0]?.title === '사피엔스')
   check(
-    '그 책에 적은 구절도 같이 온다',
-    outB.data.days['2026-09-01']?.readings[0]?.quote === '역사는 소수의 이야기',
+    '거기 적은 구절도 같이 온다',
+    outB.data.days['2026-09-01']?.contentLogs[0]?.quote === '역사는 소수의 이야기',
   )
 }
 
-// ── 11. 지운 책은 다른 기기에서 되살아나지 않는다 ──────────────────────────
+// ── 11. 지운 작품은 다른 기기에서 되살아나지 않는다 ────────────────────────
 {
-  const store: Store = { days: [], people: [], books: [], settings: null }
-  const deviceA = makeData({ books: [book('b1', '지울 책', 1000)] })
+  const store: Store = { days: [], people: [], content: [], settings: null }
+  const deviceA = makeData({ content: [item('b1', '지울 책', 1000)] })
   await syncOnce(fakeClient(store), deviceA, markEverythingDirty(deviceA, emptySyncState()))
 
   // B가 먼저 받아 가진 뒤에, A에서 지운다
   const deviceB = makeData({})
   const gotB = await syncOnce(fakeClient(store), deviceB, emptySyncState())
-  check('B가 책을 한 번 받았다', gotB.data.books.length === 1)
+  check('B가 작품을 한 번 받았다', gotB.data.content.length === 1)
 
-  const deletedOnA = makeData({ books: [], deletedBooks: { b1: 5000 } })
+  const deletedOnA = makeData({ content: [], deletedContent: { b1: 5000 } })
   await syncOnce(fakeClient(store), deletedOnA, {
     ...emptySyncState(),
-    dirtyBooks: { b1: true },
+    dirtyContent: { b1: true },
   })
-  check('서버에 지웠다고 남는다', store.books[0].deleted === true)
+  check('서버에 지웠다고 남는다', store.content[0].deleted === true)
 
   const afterB = await syncOnce(fakeClient(store), gotB.data, gotB.state)
-  check('B에서도 사라진다', afterB.data.books.length === 0, JSON.stringify(afterB.data.books))
-  check('묘비가 B에도 남는다', afterB.data.deletedBooks.b1 === 5000)
+  check('B에서도 사라진다', afterB.data.content.length === 0, JSON.stringify(afterB.data.content))
+  check('묘비가 B에도 남는다', afterB.data.deletedContent.b1 === 5000)
 }
 
-// ── 12. 옛 기기가 새 책 제목을 옛 제목으로 되돌리지 못한다 ─────────────────
+// ── 12. 옛 기기가 새 제목을 옛 제목으로 되돌리지 못한다 ────────────────────
 {
-  const store: Store = { days: [], people: [], books: [], settings: null }
-  const fresh = makeData({ books: [book('b1', '고친 제목', 9000)] })
+  const store: Store = { days: [], people: [], content: [], settings: null }
+  const fresh = makeData({ content: [item('b1', '고친 제목', 9000)] })
   await syncOnce(fakeClient(store), fresh, markEverythingDirty(fresh, emptySyncState()))
 
-  const stale = makeData({ books: [book('b1', '옛 제목', 1000)] })
+  const stale = makeData({ content: [item('b1', '옛 제목', 1000)] })
   const out = await syncOnce(fakeClient(store), stale, markEverythingDirty(stale, emptySyncState()))
-  check('서버가 옛 제목으로 덮이지 않는다', store.books[0].data.title === '고친 제목')
-  check('옛 기기도 새 제목을 받아간다', out.data.books[0].title === '고친 제목')
+  check('서버가 옛 제목으로 덮이지 않는다', store.content[0].data.title === '고친 제목')
+  check('옛 기기도 새 제목을 받아간다', out.data.content[0].title === '고친 제목')
 }
 
-// ── 13. books 테이블이 아직 없어도 나머지 동기화는 멈추지 않는다 ───────────
+// ── 13. content 테이블이 아직 없어도 나머지 동기화는 멈추지 않는다 ─────────
 //
 // 앱을 먼저 받고 Supabase 스키마를 나중에 실행하는 시기가 반드시 생긴다.
 // 그 사이에 하루 기록까지 못 올리면 안 된다.
 {
-  const store: Store = { days: [], people: [], books: [], settings: null }
+  const store: Store = { days: [], people: [], content: [], settings: null }
   const local = makeData({
     days: { '2026-09-01': day('2026-09-01', '스키마 없어도 올라가야 할 기록', 1000) },
     people: [person('p1', '지현', 1000)],
-    books: [book('b1', '아직 못 올릴 책', 1000)],
+    content: [item('b1', '아직 못 올릴 책', 1000)],
   })
   const state = markEverythingDirty(local, emptySyncState())
-  const out = await syncOnce(fakeClient(store, { noBooks: true }), local, state)
+  const out = await syncOnce(fakeClient(store, { noContent: true }), local, state)
 
   check('하루 기록은 그대로 올라간다', store.days.length === 1)
   check('사람도 올라간다', store.people.length === 1)
-  check('책만 못 올라간 것을 알려준다', out.schemaOutdated === true)
-  check('못 올린 책은 대기열에 남는다', out.state.dirtyBooks.b1 === true, JSON.stringify(out.state.dirtyBooks))
-  check('로컬의 책은 그대로 있다', out.data.books[0]?.title === '아직 못 올릴 책')
+  check('콘텐츠만 못 올라간 것을 알려준다', out.schemaOutdated === true)
+  check(
+    '못 올린 작품은 대기열에 남는다',
+    out.state.dirtyContent.b1 === true,
+    JSON.stringify(out.state.dirtyContent),
+  )
+  check('로컬의 작품은 그대로 있다', out.data.content[0]?.title === '아직 못 올릴 책')
 
-  // 스키마를 실행한 뒤 다시 돌리면 남아 있던 책이 그대로 올라간다
+  // 스키마를 실행한 뒤 다시 돌리면 남아 있던 것이 그대로 올라간다
   const after = await syncOnce(fakeClient(store), out.data, out.state)
-  check('스키마를 만든 뒤 밀린 책이 올라간다', store.books.length === 1 && store.books[0].id === 'b1')
+  check(
+    '스키마를 만든 뒤 밀린 작품이 올라간다',
+    store.content.length === 1 && store.content[0].id === 'b1',
+  )
   check('그 뒤로는 경고가 사라진다', after.schemaOutdated === false)
   check('대기열도 비워진다', pendingCount(after.state) === 0, JSON.stringify(after.state))
+}
+
+// ── 14. 독서만 있던 시절의 저장본을 콘텐츠로 옮겨 읽는다 ────────────────────
+//
+// 이름이 바뀌었다고 이미 적어둔 것이 사라지면 안 된다.
+{
+  const old = migrate({
+    books: [
+      { id: 'b1', title: '사피엔스', author: '유발 하라리', colorIndex: 3, createdAt: 1, updatedAt: 7 },
+    ],
+    deletedBooks: { b9: 4000 },
+    days: {
+      '2026-09-01': {
+        date: '2026-09-01',
+        readings: [
+          { id: 'r1', bookId: 'b1', pages: 42, quote: '옮겨 적은 문장', thought: '그때 든 생각', at: 5 },
+        ],
+        updatedAt: 5,
+      },
+    },
+  })
+
+  const moved = old.content[0]
+  check('책이 콘텐츠 목록으로 옮겨진다', old.content.length === 1 && moved.id === 'b1')
+  check("유형이 없으면 '독서'로 본다", moved.kind === 'book', moved.kind)
+  check('지은이가 byline으로 옮겨진다', moved.byline === '유발 하라리', moved.byline)
+  check('색과 시각은 그대로', moved.colorIndex === 3 && moved.updatedAt === 7)
+  check('묘비도 그대로 이어진다', old.deletedContent.b9 === 4000)
+
+  const log = old.days['2026-09-01'].contentLogs[0]
+  check('독서 기록이 콘텐츠 기록이 된다', old.days['2026-09-01'].contentLogs.length === 1)
+  check('bookId가 itemId로 옮겨진다', log.itemId === 'b1', log.itemId)
+  check('구절은 그대로', log.quote === '옮겨 적은 문장')
+  check('생각이 소감(note)으로 옮겨진다', log.note === '그때 든 생각', log.note)
+  check('쪽수도 그대로', log.pages === 42)
+  check('별점 칸은 비어서 생긴다', log.rating === null)
+
+  // 옮긴 뒤에도 동기화는 평소대로 돈다
+  const store: Store = { days: [], people: [], content: [], settings: null }
+  const out = await syncOnce(fakeClient(store), old, markEverythingDirty(old, emptySyncState()))
+  const uploaded = store.content.find((r) => r.id === 'b1')
+  check('옮긴 작품이 서버로 올라간다', uploaded?.data.title === '사피엔스', JSON.stringify(store.content))
+  // 옛 묘비도 같이 올라가야 다른 기기가 지워진 책을 되살리지 않는다
+  check('옮긴 묘비도 같이 올라간다', store.content.find((r) => r.id === 'b9')?.deleted === true)
+  check('올린 뒤 대기열이 비워진다', pendingCount(out.state) === 0, JSON.stringify(out.state))
 }
 
 console.log(`\n${pass} passed, ${fail} failed`)

@@ -9,10 +9,10 @@ import type { ISODate } from '../../lib/types'
 
 export function CalendarScreen({
   onOpenPerson,
-  onOpenBook,
+  onOpenContent,
 }: {
   onOpenPerson: (id: string) => void
-  onOpenBook: (id: string) => void
+  onOpenContent: (id: string) => void
 }) {
   const { data, today } = useStore()
   const [anchor, setAnchor] = useState<ISODate>(today)
@@ -70,9 +70,9 @@ export function CalendarScreen({
             setSelected(null)
             onOpenPerson(id)
           }}
-          onOpenBook={(id) => {
+          onOpenContent={(id) => {
             setSelected(null)
-            onOpenBook(id)
+            onOpenContent(id)
           }}
         />
       )}

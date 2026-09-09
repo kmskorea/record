@@ -2,10 +2,10 @@ import { useState } from 'react'
 import {
   BodySection,
   ConditionSection,
+  ContentSection,
   DietSection,
   IdeaSection,
   PeopleSection,
-  ReadingSection,
   ReflectionSection,
   ScoreSection,
   ScreenTimeSection,
@@ -22,10 +22,10 @@ import { formatKorean } from '../../lib/date'
 
 export function TodayScreen({
   onOpenPerson,
-  onOpenBook,
+  onOpenContent,
 }: {
   onOpenPerson: (id: string) => void
-  onOpenBook: (id: string) => void
+  onOpenContent: (id: string) => void
 }) {
   const { today, sync } = useStore()
   const [settingsOpen, setSettingsOpen] = useState(false)
@@ -68,7 +68,7 @@ export function TodayScreen({
         <BodySection date={today} />
         <DietSection date={today} />
         <PeopleSection date={today} onOpenPerson={onOpenPerson} />
-        <ReadingSection date={today} onOpenBook={onOpenBook} />
+        <ContentSection date={today} onOpenContent={onOpenContent} />
         <ReflectionSection date={today} />
       </div>
 

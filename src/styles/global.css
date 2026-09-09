@@ -2028,11 +2028,35 @@ input[type='number'] {
   color: var(--ink-3);
 }
 
-/* ── 독서 ─────────────────────────────────────────────────────────────────── */
-/* 책은 사람이 아니다. 같은 자리에 나란히 놓이므로 동그라미 대신
-   책등에 가까운 모서리로 한눈에 구분되게 한다. */
-.avatar.book {
+/* ── 콘텐츠 ───────────────────────────────────────────────────────────────── */
+/* 작품은 사람이 아니다. 검색 화면에서 같은 자리에 나란히 놓이므로
+   동그라미 대신 책등에 가까운 모서리로 한눈에 구분되게 한다. */
+.avatar.content {
   border-radius: 6px;
+  position: relative;
+}
+
+/* 어떤 유형인지(독서/영화/영상) 아바타 모서리에 점으로 얹는다.
+   제목만으로는 무엇을 본 것인지 알 수 없다. */
+.avatar.content .kind-pip {
+  position: absolute;
+  right: -2px;
+  bottom: -2px;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  border: 2px solid var(--surface);
+}
+
+.kind-tag {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 1px 7px;
+  border-radius: var(--r-pill);
+  font-size: 10.5px;
+  font-weight: 800;
+  color: #fff;
+  vertical-align: 1px;
 }
 
 .reading-quote {
@@ -2040,6 +2064,28 @@ input[type='number'] {
   padding-left: 10px;
   font-style: italic;
   color: var(--ink-2);
+}
+
+.content-link {
+  align-self: flex-start;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--blue);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+/* 새 유형 만들기 — 목록과 섞이지 않게 한 덩어리로 묶는다 */
+.kind-form {
+  margin-bottom: 14px;
+  padding: 14px;
+  background: var(--surface-2);
+  border-radius: var(--r-md);
+}
+
+.kind-form .input {
+  background: var(--surface);
+  border-color: var(--line);
 }
 
 /* 부위에서 러닝을 골랐을 때 딸려 나오는 거리·페이스 칸 */

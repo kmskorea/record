@@ -15,9 +15,15 @@ function StarShape({ className }: { className?: string }) {
 export function StarRating({
   value,
   onChange,
+  label = '하루 점수',
+  hint = '별을 눌러 오늘을 매겨보세요',
 }: {
   value: number | null
   onChange: (v: number | null) => void
+  /** 스크린리더에 읽히는 이름. 영화 별점처럼 다른 데도 쓴다 */
+  label?: string
+  /** 아직 안 매겼을 때 아래에 뜨는 안내 */
+  hint?: string
 }) {
   const shown = value ?? 0
   const step = value === null ? null : scoreStep(value)
@@ -25,7 +31,7 @@ export function StarRating({
   return (
     <div className="rating">
       <div className="rating-row">
-        <div className="stars" role="group" aria-label="하루 점수">
+        <div className="stars" role="group" aria-label={label}>
           {[1, 2, 3, 4, 5].map((i) => {
             const fill = Math.max(0, Math.min(1, shown - (i - 1)))
             return (
@@ -64,7 +70,7 @@ export function StarRating({
       </div>
 
       <div className="rating-legend">
-        <span>{value === null ? '별을 눌러 오늘을 매겨보세요' : (scoreStep(shown).label || ' ')}</span>
+        <span>{value === null ? hint : (scoreStep(shown).label || ' ')}</span>
         {value !== null && (
           <button type="button" className="link-btn" onClick={() => onChange(null)}>
             지우기

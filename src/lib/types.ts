@@ -44,14 +44,96 @@ export interface Interaction {
 }
 
 /**
- * 읽고 있는 책. 사람과 같은 취급이다 — 날짜별 기록이 여기에 매달리고,
+ * 유형마다 다르게 받는 칸.
+ * 책에는 쪽수와 구절이, 영화에는 별점이, 영상에는 링크가 필요하다.
+ */
+export type ContentField = 'pages' | 'quote' | 'rating' | 'url'
+
+export const CONTENT_FIELD_LABEL: Record<ContentField, string> = {
+  pages: '쪽수',
+  quote: '구절',
+  rating: '별점',
+  url: '링크',
+}
+
+/**
+ * 링크는 그날의 감상이 아니라 작품 자체에 붙는다. 같은 영상을 두 번 봐도
+ * 주소는 하나다. 나머지 칸은 '그날 어땠나'라서 날짜별 기록에 붙는다.
+ */
+export const ITEM_FIELDS: ContentField[] = ['url']
+
+export interface ContentKindDef {
+  id: string
+  label: string
+  /** 제목 옆에 적는 것. 유형마다 부르는 이름이 다르다 */
+  bylineLabel: string
+  /** 소감 칸의 이름. 책은 '생각', 영상은 '영감'이 자연스럽다 */
+  noteLabel: string
+  notePlaceholder: string
+  /** 새 항목을 만드는 버튼에 쓰는 말 ('새 책', '새 영화') */
+  newLabel: string
+  fields: ContentField[]
+  colorIndex: number
+}
+
+export const CONTENT_COLORS = [
+  '#A9713C',
+  '#8E6BB5',
+  '#E4572E',
+  '#3E8E7E',
+  '#3D5AFE',
+  '#C25A7B',
+  '#E8B93B',
+  '#4F7CAC',
+]
+
+/** 처음부터 있는 유형. 사용자가 만든 유형은 AppData.customContentKinds에 쌓인다. */
+export const BUILTIN_CONTENT_KINDS: ContentKindDef[] = [
+  {
+    id: 'book',
+    label: '독서',
+    bylineLabel: '지은이',
+    noteLabel: '그에 대한 나의 생각',
+    notePlaceholder: '왜 걸렸는지, 무엇이 떠올랐는지',
+    newLabel: '새 책',
+    fields: ['pages', 'quote'],
+    colorIndex: 0,
+  },
+  {
+    id: 'movie',
+    label: '영화',
+    bylineLabel: '감독',
+    noteLabel: '소감',
+    notePlaceholder: '보고 나서 남은 것',
+    newLabel: '새 영화',
+    fields: ['rating'],
+    colorIndex: 1,
+  },
+  {
+    id: 'video',
+    label: '유튜브 영상',
+    bylineLabel: '채널',
+    noteLabel: '영감',
+    notePlaceholder: '여기서 얻은 것, 해보고 싶어진 것',
+    newLabel: '새 영상',
+    fields: ['url'],
+    colorIndex: 2,
+  },
+]
+
+/**
+ * 보고 읽은 것 한 편. 사람과 같은 취급이다 — 날짜별 기록이 여기에 매달리고,
  * 검색에서 하나로 모아 볼 수 있어야 하므로 따로 객체를 둔다.
  */
-export interface Book {
+export interface ContentItem {
   id: string
+  /** ContentKindDef.id */
+  kind: string
   title: string
-  /** 자유 입력. 지은이 */
-  author: string
+  /** 지은이 / 감독 / 채널. 유형에 따라 뜻이 달라진다 */
+  byline: string
+  /** 영상 주소처럼 작품 자체에 붙는 링크 */
+  url: string
   /** 프로필 색상 인덱스 (PROFILE_COLORS 참조) */
   colorIndex: number
   createdAt: number
@@ -59,16 +141,18 @@ export interface Book {
   updatedAt: number
 }
 
-/** 특정 날짜에 특정 책을 읽은 기록. */
-export interface Reading {
+/** 특정 날짜에 그 작품을 보고 읽은 기록. */
+export interface ContentLog {
   id: string
-  bookId: string
-  /** 그날 읽은 쪽수 */
+  itemId: string
+  /** 독서: 그날 읽은 쪽수 */
   pages: number | null
-  /** 인상적인 구절 */
+  /** 독서: 인상적인 구절 */
   quote: string
-  /** 그 구절에 대한 내 생각 */
-  thought: string
+  /** 영화 등: 0.5~5 별점 */
+  rating: number | null
+  /** 공통: 생각 / 소감 / 영감 */
+  note: string
   at: number
 }
 
@@ -197,8 +281,8 @@ export interface DayRecord {
   weight: number | null
   diet: Diet
   interactions: Interaction[]
-  /** 그날 읽은 기록. 안 읽은 날이 더 많아서 대개 비어 있다. */
-  readings: Reading[]
+  /** 그날 보고 읽은 기록. 아무것도 안 본 날이 더 많아서 대개 비어 있다. */
+  contentLogs: ContentLog[]
   reflection: string
   /** 하루를 매기는 최종 점수. 0~5, 0.5 단위. 달력 색의 기준이다. */
   score: number | null
@@ -228,7 +312,7 @@ export interface AppData {
   version: number
   days: Record<ISODate, DayRecord>
   people: Person[]
-  books: Book[]
+  content: ContentItem[]
   notifications: NotificationSettings
   /** 사용자가 직접 추가한 운동 부위 */
   customWorkoutParts: string[]
@@ -239,8 +323,10 @@ export interface AppData {
    * '지웠다'는 사실 자체를 기록해서 같이 퍼뜨려야 한다.
    */
   deletedPeople: Record<string, number>
-  /** 지운 책의 묘비. 사람과 같은 이유다. */
-  deletedBooks: Record<string, number>
+  /** 지운 콘텐츠의 묘비. 사람과 같은 이유다. */
+  deletedContent: Record<string, number>
+  /** 사용자가 직접 만든 콘텐츠 유형 (팟캐스트, 전시 …) */
+  customContentKinds: ContentKindDef[]
   /** 알림 시각·운동 부위 같은 설정의 최종 수정 시각 */
   settingsUpdatedAt: number
 }
@@ -299,7 +385,7 @@ export function emptyDay(date: ISODate): DayRecord {
     weight: null,
     diet: { meals: [], protein: null, water: null, creatine: null, sugar: null },
     interactions: [],
-    readings: [],
+    contentLogs: [],
     reflection: '',
     score: null,
     scoreNote: '',

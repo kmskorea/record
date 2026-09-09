@@ -17,15 +17,20 @@ import { formatDuration, formatMinutes, formatPace, runSeconds, snsTotal } from 
 import { newId } from '../../lib/storage'
 import { formatTime } from '../../lib/date'
 import {
+  BUILTIN_CONTENT_KINDS,
+  CONTENT_COLORS,
+  CONTENT_FIELD_LABEL,
   EVENT_KIND_COLOR,
   EVENT_KIND_LABEL,
   INTENSITY_LABEL,
+  ITEM_FIELDS,
   MEAL_LABELS,
   RUNNING_PART,
   SNS_APPS,
   PROFILE_COLORS,
   WORKOUT_PARTS,
   isRunning,
+  type ContentField,
   type EventKind,
   type ISODate,
   type Intensity,
@@ -1212,102 +1217,284 @@ export function PeopleSection({
   )
 }
 
-// ── 독서 ─────────────────────────────────────────────────────────────────────
+// ── 콘텐츠 ───────────────────────────────────────────────────────────────────
 
-export function ReadingSection({
+/**
+ * 유형마다 다른 칸을 그린다. 책은 쪽수와 구절, 영화는 별점, 영상은 링크.
+ * 링크만 작품 자체에 붙으므로(주소는 안 바뀐다) 여기서는 다루지 않는다.
+ */
+function LogFields({
+  fields,
+  pages,
+  setPages,
+  quote,
+  setQuote,
+  rating,
+  setRating,
+}: {
+  fields: ContentField[]
+  pages: string
+  setPages: (v: string) => void
+  quote: string
+  setQuote: (v: string) => void
+  rating: number | null
+  setRating: (v: number | null) => void
+}) {
+  return (
+    <>
+      {fields.includes('pages') && (
+        <div className="num-row">
+          <span className="num-name">읽은 쪽수</span>
+          <span className="num-inputs">
+            <input
+              className="input"
+              type="number"
+              inputMode="numeric"
+              min={0}
+              placeholder="0"
+              aria-label="읽은 쪽수"
+              value={pages}
+              onChange={(e) => setPages(e.target.value)}
+            />
+            <span className="num-unit">쪽</span>
+          </span>
+        </div>
+      )}
+      {fields.includes('quote') && (
+        <label className="field">
+          <span className="field-label">인상적인 구절</span>
+          <textarea
+            className="textarea"
+            style={{ minHeight: 76 }}
+            placeholder="옮겨 적고 싶은 문장"
+            value={quote}
+            onChange={(e) => setQuote(e.target.value)}
+          />
+        </label>
+      )}
+      {fields.includes('rating') && (
+        <div className="field">
+          <span className="field-label">별점</span>
+          <StarRating
+            value={rating}
+            onChange={setRating}
+            label="별점"
+            hint="별을 눌러 매겨보세요"
+          />
+        </div>
+      )}
+    </>
+  )
+}
+
+export function ContentSection({
   date,
-  onOpenBook,
-}: SectionProps & { onOpenBook?: (id: string) => void }) {
-  const { getDay, updateDay, data, addBook } = useStore()
+  onOpenContent,
+}: SectionProps & { onOpenContent?: (id: string) => void }) {
+  const { getDay, updateDay, data, addContent, addContentKind } = useStore()
   const day = getDay(date)
-  const [bookId, setBookId] = useState<string | null>(null)
+
+  const kinds = useMemo(
+    () => [...BUILTIN_CONTENT_KINDS, ...data.customContentKinds],
+    [data.customContentKinds],
+  )
+  const [kindId, setKindId] = useState(BUILTIN_CONTENT_KINDS[0].id)
+  const kind = kinds.find((k) => k.id === kindId) ?? kinds[0]
+
+  const [itemId, setItemId] = useState<string | null>(null)
   const [pages, setPages] = useState('')
   const [quote, setQuote] = useState('')
-  const [thought, setThought] = useState('')
+  const [rating, setRating] = useState<number | null>(null)
+  const [note, setNote] = useState('')
+
   const [creating, setCreating] = useState(false)
   const [title, setTitle] = useState('')
-  const [author, setAuthor] = useState('')
+  const [byline, setByline] = useState('')
+  const [url, setUrl] = useState('')
 
-  const bookById = useMemo(
-    () => Object.fromEntries(data.books.map((b) => [b.id, b])),
-    [data.books],
+  const [addingKind, setAddingKind] = useState(false)
+  const [kindLabel, setKindLabel] = useState('')
+  const [kindFields, setKindFields] = useState<ContentField[]>(['rating'])
+
+  const itemById = useMemo(
+    () => Object.fromEntries(data.content.map((c) => [c.id, c])),
+    [data.content],
+  )
+  const kindById = useMemo(() => Object.fromEntries(kinds.map((k) => [k.id, k])), [kinds])
+  const items = useMemo(
+    () => data.content.filter((c) => c.kind === kindId),
+    [data.content, kindId],
   )
 
-  const reset = () => {
-    setBookId(null)
+  const logFields = kind.fields.filter((f) => !ITEM_FIELDS.includes(f))
+
+  const clearDraft = () => {
+    setItemId(null)
     setPages('')
     setQuote('')
-    setThought('')
+    setRating(null)
+    setNote('')
+  }
+
+  const pickKind = (id: string) => {
+    setKindId(id)
+    setCreating(false)
+    clearDraft()
   }
 
   const submit = () => {
-    if (!bookId) return
+    if (!itemId) return
     const p = Number(pages)
     const entry = {
       id: newId(),
-      bookId,
-      pages: pages.trim() === '' || !Number.isFinite(p) || p <= 0 ? null : p,
-      quote: quote.trim(),
-      thought: thought.trim(),
+      itemId,
+      pages:
+        !kind.fields.includes('pages') || pages.trim() === '' || !Number.isFinite(p) || p <= 0
+          ? null
+          : p,
+      quote: kind.fields.includes('quote') ? quote.trim() : '',
+      rating: kind.fields.includes('rating') ? rating : null,
+      note: note.trim(),
       at: Date.now(),
     }
-    // 셋 다 비면 남길 게 없다. 책만 고르고 아무것도 안 적은 상태다.
-    if (entry.pages === null && !entry.quote && !entry.thought) return
-    updateDay(date, (d) => ({ readings: [entry, ...d.readings] }))
-    reset()
+    // 아무 칸도 안 채웠으면 남길 게 없다. 작품만 고른 상태다.
+    if (entry.pages === null && !entry.quote && entry.rating === null && !entry.note) return
+    updateDay(date, (d) => ({ contentLogs: [entry, ...d.contentLogs] }))
+    clearDraft()
   }
 
-  const createBook = () => {
+  const createItem = () => {
     if (!title.trim()) return
-    const book = addBook(title, author)
-    setBookId(book.id)
+    const item = addContent(kindId, title, byline, url)
+    setItemId(item.id)
     setTitle('')
-    setAuthor('')
+    setByline('')
+    setUrl('')
     setCreating(false)
   }
 
-  const totalPages = day.readings.reduce((sum, r) => sum + (r.pages ?? 0), 0)
-  const titles = [...new Set(day.readings.map((r) => bookById[r.bookId]?.title).filter(Boolean))]
+  const createKind = () => {
+    const made = addContentKind(kindLabel, kindFields)
+    if (!made) return
+    setKindLabel('')
+    setKindFields(['rating'])
+    setAddingKind(false)
+    pickKind(made.id)
+  }
 
+  const titles = [
+    ...new Set(day.contentLogs.map((r) => itemById[r.itemId]?.title).filter(Boolean)),
+  ]
   const summary =
-    day.readings.length === 0 ? (
+    day.contentLogs.length === 0 ? (
       '—'
     ) : (
       <>
-        {titles.join(', ') || `${day.readings.length}개`}
-        {totalPages > 0 && <span className="dim"> · {totalPages}쪽</span>}
+        {titles.slice(0, 2).join(', ') || `${day.contentLogs.length}개`}
+        {titles.length > 2 && <span className="dim"> 외 {titles.length - 2}</span>}
       </>
     )
 
   return (
     <CollapsibleCard
-      title="독서"
+      title="콘텐츠"
       mark="var(--brown)"
-      filled={day.readings.length > 0}
-      // 읽는 날보다 안 읽는 날이 많다. 매일 펼쳐 두면 지나치는 칸이 된다.
+      filled={day.contentLogs.length > 0}
+      // 보고 읽는 날보다 그렇지 않은 날이 많다. 매일 펼쳐 두면 지나치는 칸이 된다.
       alwaysCollapsed
       summary={summary}
     >
+      <div className="chips" style={{ marginBottom: 14 }}>
+        {kinds.map((k) => (
+          <Chip
+            key={k.id}
+            active={k.id === kindId}
+            color={CONTENT_COLORS[k.colorIndex % CONTENT_COLORS.length]}
+            onClick={() => pickKind(k.id)}
+          >
+            {k.label}
+          </Chip>
+        ))}
+        <button type="button" className="chip" onClick={() => setAddingKind((v) => !v)}>
+          + 유형
+        </button>
+      </div>
+
+      {addingKind && (
+        <div className="stack kind-form">
+          <input
+            className="input"
+            autoFocus
+            placeholder="유형 이름 (예: 팟캐스트, 전시)"
+            value={kindLabel}
+            onChange={(e) => setKindLabel(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') createKind()
+            }}
+          />
+          <div className="field">
+            <span className="field-label">무엇을 적을까요? (소감은 항상 있어요)</span>
+            <div className="chips">
+              {(Object.keys(CONTENT_FIELD_LABEL) as ContentField[]).map((f) => (
+                <Chip
+                  key={f}
+                  active={kindFields.includes(f)}
+                  onClick={() =>
+                    setKindFields((prev) =>
+                      prev.includes(f) ? prev.filter((x) => x !== f) : [...prev, f],
+                    )
+                  }
+                >
+                  {CONTENT_FIELD_LABEL[f]}
+                </Chip>
+              ))}
+            </div>
+          </div>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button type="button" className="btn primary" onClick={createKind}>
+              만들기
+            </button>
+            <button type="button" className="btn ghost" onClick={() => setAddingKind(false)}>
+              취소
+            </button>
+          </div>
+        </div>
+      )}
+
       {creating ? (
         <div className="stack">
           <input
             className="input"
             autoFocus
-            placeholder="책 이름"
+            placeholder={`${kind.label} 제목`}
             value={title}
             onChange={(e) => setTitle(e.target.value)}
           />
           <input
             className="input"
-            placeholder="지은이 (선택)"
-            value={author}
-            onChange={(e) => setAuthor(e.target.value)}
+            placeholder={`${kind.bylineLabel} (선택)`}
+            value={byline}
+            onChange={(e) => setByline(e.target.value)}
             onKeyDown={(e) => {
-              if (e.key === 'Enter') createBook()
+              if (e.key === 'Enter' && !kind.fields.includes('url')) createItem()
             }}
           />
+          {kind.fields.includes('url') && (
+            <input
+              className="input"
+              type="url"
+              inputMode="url"
+              placeholder="영상 링크 (https://…)"
+              aria-label="영상 링크"
+              value={url}
+              onChange={(e) => setUrl(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') createItem()
+              }}
+            />
+          )}
           <div style={{ display: 'flex', gap: 8 }}>
-            <button type="button" className="btn primary" onClick={createBook}>
+            <button type="button" className="btn primary" onClick={createItem}>
               등록
             </button>
             <button type="button" className="btn ghost" onClick={() => setCreating(false)}>
@@ -1317,32 +1504,32 @@ export function ReadingSection({
         </div>
       ) : (
         <div className="person-scroll">
-          {data.books.map((b) => {
-            const active = bookId === b.id
+          {items.map((c) => {
+            const active = itemId === c.id
             return (
               <button
-                key={b.id}
+                key={c.id}
                 type="button"
                 className="person-pill"
                 aria-pressed={active}
-                onClick={() => setBookId(active ? null : b.id)}
+                onClick={() => setItemId(active ? null : c.id)}
               >
                 <span
-                  className="avatar book"
+                  className="avatar content"
                   data-selected={active}
-                  style={{ background: PROFILE_COLORS[b.colorIndex % PROFILE_COLORS.length] }}
+                  style={{ background: PROFILE_COLORS[c.colorIndex % PROFILE_COLORS.length] }}
                 >
-                  {initial(b.title)}
+                  {initial(c.title)}
                 </span>
                 <span className="name" style={{ color: active ? 'var(--ink)' : 'var(--ink-3)' }}>
-                  {b.title}
+                  {c.title}
                 </span>
               </button>
             )
           })}
           <button type="button" className="person-pill" onClick={() => setCreating(true)}>
             <span
-              className="avatar book"
+              className="avatar content"
               style={{
                 background: 'var(--surface-2)',
                 color: 'var(--ink-3)',
@@ -1352,95 +1539,97 @@ export function ReadingSection({
               <PlusIcon className="plus-sm" />
             </span>
             <span className="name" style={{ color: 'var(--ink-3)' }}>
-              새 책
+              {kind.newLabel}
             </span>
           </button>
         </div>
       )}
 
-      {bookId && !creating && (
+      {itemId && !creating && (
         <div className="stack" style={{ marginTop: 12 }}>
-          <div className="num-row">
-            <span className="num-name">읽은 쪽수</span>
-            <span className="num-inputs">
-              <input
-                className="input"
-                type="number"
-                inputMode="numeric"
-                min={0}
-                placeholder="0"
-                aria-label="읽은 쪽수"
-                value={pages}
-                onChange={(e) => setPages(e.target.value)}
-              />
-              <span className="num-unit">쪽</span>
-            </span>
-          </div>
+          <LogFields
+            fields={logFields}
+            pages={pages}
+            setPages={setPages}
+            quote={quote}
+            setQuote={setQuote}
+            rating={rating}
+            setRating={setRating}
+          />
           <label className="field">
-            <span className="field-label">인상적인 구절</span>
+            <span className="field-label">{kind.noteLabel}</span>
             <textarea
               className="textarea"
               style={{ minHeight: 76 }}
-              placeholder="옮겨 적고 싶은 문장"
-              value={quote}
-              onChange={(e) => setQuote(e.target.value)}
-            />
-          </label>
-          <label className="field">
-            <span className="field-label">그에 대한 나의 생각</span>
-            <textarea
-              className="textarea"
-              style={{ minHeight: 76 }}
-              placeholder="왜 걸렸는지, 무엇이 떠올랐는지"
-              value={thought}
-              onChange={(e) => setThought(e.target.value)}
+              placeholder={kind.notePlaceholder}
+              value={note}
+              onChange={(e) => setNote(e.target.value)}
             />
           </label>
           <button
             type="button"
             className="btn primary block"
             onClick={submit}
-            disabled={!pages.trim() && !quote.trim() && !thought.trim()}
+            disabled={!pages.trim() && !quote.trim() && rating === null && !note.trim()}
           >
             기록
           </button>
         </div>
       )}
 
-      {day.readings.length > 0 && (
+      {day.contentLogs.length > 0 && (
         <div className="stack" style={{ marginTop: 14 }}>
-          {day.readings.map((r) => {
-            const book = bookById[r.bookId]
+          {day.contentLogs.map((r) => {
+            const item = itemById[r.itemId]
+            const itemKind = item ? kindById[item.kind] : undefined
             return (
               <div key={r.id} className="note-item">
                 <button
                   type="button"
-                  className="avatar sm book"
-                  onClick={() => onOpenBook?.(r.bookId)}
+                  className="avatar sm content"
+                  onClick={() => onOpenContent?.(r.itemId)}
                   style={{
-                    background: book
-                      ? PROFILE_COLORS[book.colorIndex % PROFILE_COLORS.length]
+                    background: item
+                      ? PROFILE_COLORS[item.colorIndex % PROFILE_COLORS.length]
                       : 'var(--ink-3)',
-                    cursor: onOpenBook ? 'pointer' : 'default',
+                    cursor: onOpenContent ? 'pointer' : 'default',
                   }}
-                  aria-label={`${book?.title ?? '알 수 없음'} 책 열기`}
+                  aria-label={`${item?.title ?? '알 수 없음'} 열기`}
                 >
-                  {initial(book?.title ?? '?')}
+                  {initial(item?.title ?? '?')}
                 </button>
                 <div className="body">
                   <div style={{ fontSize: 13, fontWeight: 700 }}>
-                    {book?.title ?? '삭제된 책'}
+                    {item?.title ?? '삭제된 항목'}
+                    {itemKind && (
+                      <span
+                        className="kind-tag"
+                        style={{
+                          background: CONTENT_COLORS[itemKind.colorIndex % CONTENT_COLORS.length],
+                        }}
+                      >
+                        {itemKind.label}
+                      </span>
+                    )}
                     {r.pages !== null && <span className="dim"> · {r.pages}쪽</span>}
+                    {r.rating !== null && <span className="dim"> · ★ {r.rating.toFixed(1)}</span>}
                   </div>
                   {r.quote && <p className="reading-quote">{r.quote}</p>}
-                  {r.thought && <p>{r.thought}</p>}
+                  {r.note && <p>{r.note}</p>}
+                  {item?.url && (
+                    <a className="content-link" href={item.url} target="_blank" rel="noreferrer">
+                      링크 열기
+                    </a>
+                  )}
                 </div>
                 <button
                   type="button"
                   className="icon-btn plain"
-                  aria-label="독서 기록 삭제"
+                  aria-label="콘텐츠 기록 삭제"
                   onClick={() =>
-                    updateDay(date, (d) => ({ readings: d.readings.filter((x) => x.id !== r.id) }))
+                    updateDay(date, (d) => ({
+                      contentLogs: d.contentLogs.filter((x) => x.id !== r.id),
+                    }))
                   }
                 >
                   <TrashIcon />
@@ -1453,6 +1642,7 @@ export function ReadingSection({
     </CollapsibleCard>
   )
 }
+
 
 // ── 자기성찰 ─────────────────────────────────────────────────────────────────
 

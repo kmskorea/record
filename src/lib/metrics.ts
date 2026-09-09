@@ -235,7 +235,7 @@ export const METRICS: MetricDef[] = [
     get: (d) => {
       // 안 읽은 날은 0이 아니라 '기록 없음'이다. 0쪽으로 세면
       // 평균이 주저앉아 실제로 읽은 날의 흐름이 안 보인다.
-      const pages = d.readings.reduce((sum, r) => sum + (r.pages ?? 0), 0)
+      const pages = d.contentLogs.reduce((sum, r) => sum + (r.pages ?? 0), 0)
       return pages > 0 ? pages : null
     },
     format: (v) => `${round1(v)}쪽`,
@@ -325,7 +325,7 @@ export function hasContent(day: DayRecord | undefined): boolean {
     day.todos.length > 0 ||
     day.ideas.length > 0 ||
     day.interactions.length > 0 ||
-    day.readings.length > 0 ||
+    day.contentLogs.length > 0 ||
     day.reflection.trim() !== '' ||
     day.score !== null ||
     day.scoreNote.trim() !== '' ||

@@ -11,14 +11,15 @@ import {
 import type { Session } from '@supabase/supabase-js'
 import type {
   AppData,
-  Book,
+  ContentItem,
+  ContentKindDef,
   DayRecord,
   ISODate,
   NotificationSettings,
   Person,
   TimeCategory,
 } from './types'
-import { emptyDay, PROFILE_COLORS, TIME_COLORS } from './types'
+import { BUILTIN_CONTENT_KINDS, CONTENT_COLORS, emptyDay, PROFILE_COLORS, TIME_COLORS } from './types'
 import {
   flush,
   load,
@@ -41,9 +42,10 @@ interface StoreValue {
   addPerson: (name: string, relation: string) => Person
   updatePerson: (id: string, patch: Partial<Omit<Person, 'id'>>) => void
   deletePerson: (id: string) => void
-  addBook: (title: string, author: string) => Book
-  updateBook: (id: string, patch: Partial<Omit<Book, 'id'>>) => void
-  deleteBook: (id: string) => void
+  addContent: (kind: string, title: string, byline: string, url: string) => ContentItem
+  updateContent: (id: string, patch: Partial<Omit<ContentItem, 'id'>>) => void
+  deleteContent: (id: string) => void
+  addContentKind: (label: string, fields: ContentKindDef['fields']) => ContentKindDef | null
   setNotifications: (patch: Partial<NotificationSettings>) => void
   markNotificationFired: (slot: string, date: ISODate) => void
   addCustomWorkoutPart: (part: string) => void
@@ -314,49 +316,51 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     [commit],
   )
 
-  const addBook = useCallback<StoreValue['addBook']>(
-    (title, author) => {
+  const addContent = useCallback<StoreValue['addContent']>(
+    (kind, title, byline, url) => {
       const now = Date.now()
-      const book: Book = {
+      const item: ContentItem = {
         id: newId(),
+        kind,
         title: title.trim(),
-        author: author.trim(),
+        byline: byline.trim(),
+        url: url.trim(),
         colorIndex: Math.floor(Math.random() * PROFILE_COLORS.length),
         createdAt: now,
         updatedAt: now,
       }
-      const nextData = { ...dataRef.current, books: [...dataRef.current.books, book] }
+      const nextData = { ...dataRef.current, content: [...dataRef.current.content, item] }
       dataRef.current = nextData
-      commit(nextData, (s) => ({ ...s, dirtyBooks: { ...s.dirtyBooks, [book.id]: true } }))
-      return book
+      commit(nextData, (s) => ({ ...s, dirtyContent: { ...s.dirtyContent, [item.id]: true } }))
+      return item
     },
     [commit],
   )
 
-  const updateBook = useCallback<StoreValue['updateBook']>(
+  const updateContent = useCallback<StoreValue['updateContent']>(
     (id, patch) => {
       const nextData = {
         ...dataRef.current,
-        books: dataRef.current.books.map((b) =>
-          b.id === id ? { ...b, ...patch, updatedAt: Date.now() } : b,
+        content: dataRef.current.content.map((c) =>
+          c.id === id ? { ...c, ...patch, updatedAt: Date.now() } : c,
         ),
       }
       dataRef.current = nextData
-      commit(nextData, (s) => ({ ...s, dirtyBooks: { ...s.dirtyBooks, [id]: true } }))
+      commit(nextData, (s) => ({ ...s, dirtyContent: { ...s.dirtyContent, [id]: true } }))
     },
     [commit],
   )
 
-  const deleteBook = useCallback<StoreValue['deleteBook']>(
+  const deleteContent = useCallback<StoreValue['deleteContent']>(
     (id) => {
       const now = Date.now()
       const days: Record<ISODate, DayRecord> = {}
       const touched: ISODate[] = []
       for (const [date, day] of Object.entries(dataRef.current.days)) {
-        if (day.readings.some((r) => r.bookId === id)) {
+        if (day.contentLogs.some((r) => r.itemId === id)) {
           days[date] = {
             ...day,
-            readings: day.readings.filter((r) => r.bookId !== id),
+            contentLogs: day.contentLogs.filter((r) => r.itemId !== id),
             updatedAt: now,
           }
           touched.push(date)
@@ -367,15 +371,44 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       const nextData: AppData = {
         ...dataRef.current,
         days,
-        books: dataRef.current.books.filter((b) => b.id !== id),
-        deletedBooks: { ...dataRef.current.deletedBooks, [id]: now },
+        content: dataRef.current.content.filter((c) => c.id !== id),
+        deletedContent: { ...dataRef.current.deletedContent, [id]: now },
       }
       dataRef.current = nextData
       commit(nextData, (s) => {
         const dirtyDays = { ...s.dirtyDays }
         for (const date of touched) dirtyDays[date] = true
-        return { ...s, dirtyDays, dirtyBooks: { ...s.dirtyBooks, [id]: true } }
+        return { ...s, dirtyDays, dirtyContent: { ...s.dirtyContent, [id]: true } }
       })
+    },
+    [commit],
+  )
+
+  const addContentKind = useCallback<StoreValue['addContentKind']>(
+    (label, fields) => {
+      const clean = label.trim()
+      if (!clean) return null
+      const all = [...BUILTIN_CONTENT_KINDS, ...dataRef.current.customContentKinds]
+      const existing = all.find((k) => k.label === clean)
+      if (existing) return existing
+      const kind: ContentKindDef = {
+        id: newId(),
+        label: clean,
+        bylineLabel: '만든 사람',
+        noteLabel: '소감',
+        notePlaceholder: '보고 나서 남은 것',
+        newLabel: `새 ${clean}`,
+        fields,
+        colorIndex: all.length % CONTENT_COLORS.length,
+      }
+      const nextData: AppData = {
+        ...dataRef.current,
+        customContentKinds: [...dataRef.current.customContentKinds, kind],
+        settingsUpdatedAt: Date.now(),
+      }
+      dataRef.current = nextData
+      commit(nextData, (s) => ({ ...s, settingsDirty: true }))
+      return kind
     },
     [commit],
   )
@@ -561,9 +594,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       addPerson,
       updatePerson,
       deletePerson,
-      addBook,
-      updateBook,
-      deleteBook,
+      addContent,
+      updateContent,
+      deleteContent,
+      addContentKind,
       setNotifications,
       markNotificationFired,
       addCustomWorkoutPart,
@@ -588,9 +622,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       addPerson,
       updatePerson,
       deletePerson,
-      addBook,
-      updateBook,
-      deleteBook,
+      addContent,
+      updateContent,
+      deleteContent,
+      addContentKind,
       setNotifications,
       markNotificationFired,
       addCustomWorkoutPart,

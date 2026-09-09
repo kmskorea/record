@@ -1,11 +1,12 @@
 import type {
   AppData,
-  Book,
+  ContentItem,
+  ContentKindDef,
+  ContentLog,
   DayEvent,
   DayRecord,
   ISODate,
   Person,
-  Reading,
   TimeCategory,
   Todo,
   Workout,
@@ -29,30 +30,38 @@ export function emptyData(): AppData {
     version: VERSION,
     days: {},
     people: [],
-    books: [],
+    content: [],
     notifications: { ...DEFAULT_NOTIFICATIONS, lastFired: {} },
     customWorkoutParts: [],
     timeCategories: [],
     deletedPeople: {},
-    deletedBooks: {},
+    deletedContent: {},
+    customContentKinds: [],
     settingsUpdatedAt: 0,
   }
 }
 
 /**
- * 읽은 기록 한 줄. 쪽수는 안 적을 수 있고(구절만 남기는 날이 있다),
- * 구절과 생각은 없더라도 빈 문자열이어야 화면에서 undefined가 새지 않는다.
+ * 그날의 감상 한 줄. 어떤 칸을 쓰는지는 유형마다 다르므로 대부분 비어 있다.
+ * 없더라도 빈 문자열·null이어야 화면에서 undefined가 새지 않는다.
+ *
+ * 독서만 있던 시절의 이름도 여기서 받는다(bookId → itemId, thought → note).
  */
-function normalizeReading(raw: unknown): Reading {
-  const r = (raw ?? {}) as Partial<Reading>
+function normalizeLog(raw: unknown): ContentLog {
+  const r = (raw ?? {}) as Partial<ContentLog> & { bookId?: string; thought?: string }
   return {
     id: typeof r.id === 'string' ? r.id : newId(),
-    bookId: typeof r.bookId === 'string' ? r.bookId : '',
-    pages: typeof r.pages === 'number' && Number.isFinite(r.pages) && r.pages > 0 ? r.pages : null,
+    itemId: typeof r.itemId === 'string' ? r.itemId : (r.bookId ?? ''),
+    pages: positive(r.pages),
     quote: typeof r.quote === 'string' ? r.quote : '',
-    thought: typeof r.thought === 'string' ? r.thought : '',
+    rating: positive(r.rating),
+    note: typeof r.note === 'string' ? r.note : (r.thought ?? ''),
     at: typeof r.at === 'number' ? r.at : 0,
   }
+}
+
+function pickTombstones(raw: unknown): Record<string, number> {
+  return raw && typeof raw === 'object' ? (raw as Record<string, number>) : {}
 }
 
 /** 0이나 음수, NaN은 '안 적었다'로 본다. 0km 러닝은 기록이 아니다. */
@@ -100,7 +109,12 @@ export function normalizeDay(date: ISODate, raw: unknown): DayRecord {
     todos,
     ideas: Array.isArray(d.ideas) ? d.ideas : base.ideas,
     interactions: Array.isArray(d.interactions) ? d.interactions : base.interactions,
-    readings: Array.isArray(d.readings) ? d.readings.map(normalizeReading) : base.readings,
+    contentLogs: Array.isArray(d.contentLogs)
+      ? d.contentLogs.map(normalizeLog)
+      : // 독서만 있던 시절의 이름
+        Array.isArray((d as { readings?: unknown[] }).readings)
+        ? (d as { readings: unknown[] }).readings.map(normalizeLog)
+        : base.contentLogs,
     sleep: { ...base.sleep, ...(d.sleep ?? {}) },
     condition: { ...base.condition, ...(d.condition ?? {}) },
     workout: normalizeWorkout(d.workout, base.workout),
@@ -163,14 +177,20 @@ function withOrder(rawTodos: Todo[], rawEvents: DayEvent[]): { todos: Todo[]; ev
   }
 }
 
-function normalizeBook(raw: unknown): Book | null {
+/**
+ * 작품 한 편. 유형이 없으면 독서로 본다 — 콘텐츠가 독서뿐이던 시절에
+ * 만든 항목은 kind가 없고 지은이가 author에 들어 있다.
+ */
+function normalizeContentItem(raw: unknown): ContentItem | null {
   if (!raw || typeof raw !== 'object') return null
-  const b = raw as Partial<Book>
+  const b = raw as Partial<ContentItem> & { author?: string }
   if (!b.id || typeof b.id !== 'string') return null
   return {
     id: b.id,
+    kind: typeof b.kind === 'string' && b.kind ? b.kind : 'book',
     title: typeof b.title === 'string' ? b.title : '',
-    author: typeof b.author === 'string' ? b.author : '',
+    byline: typeof b.byline === 'string' ? b.byline : (b.author ?? ''),
+    url: typeof b.url === 'string' ? b.url : '',
     colorIndex: typeof b.colorIndex === 'number' ? b.colorIndex : 0,
     createdAt: typeof b.createdAt === 'number' ? b.createdAt : Date.now(),
     updatedAt: typeof b.updatedAt === 'number' ? b.updatedAt : (b.createdAt ?? Date.now()),
@@ -222,15 +242,19 @@ export function migrate(input: unknown): AppData {
     ? raw.people.map(normalizePerson).filter((p): p is Person => p !== null)
     : base.people
 
-  const books = Array.isArray(raw.books)
-    ? raw.books.map(normalizeBook).filter((b): b is Book => b !== null)
-    : base.books
+  const rawContent = Array.isArray(raw.content)
+    ? raw.content
+    : // 독서만 있던 시절의 이름
+      ((raw as { books?: unknown[] }).books ?? [])
+  const content = rawContent
+    .map(normalizeContentItem)
+    .filter((b): b is ContentItem => b !== null)
 
   return {
     version: VERSION,
     days,
     people,
-    books,
+    content,
     notifications: { ...base.notifications, ...(raw.notifications ?? {}) },
     // 예전에 직접 추가해둔 이름이 기본 부위가 되는 일이 있다('러닝'). 칩이 두 번
     // 나오지 않게 기본 목록과 겹치는 건 여기서 걷어낸다.
@@ -247,7 +271,12 @@ export function migrate(input: unknown): AppData {
       : [],
     deletedPeople:
       raw.deletedPeople && typeof raw.deletedPeople === 'object' ? raw.deletedPeople : {},
-    deletedBooks: raw.deletedBooks && typeof raw.deletedBooks === 'object' ? raw.deletedBooks : {},
+    deletedContent: pickTombstones(raw.deletedContent ?? (raw as { deletedBooks?: unknown }).deletedBooks),
+    customContentKinds: Array.isArray(raw.customContentKinds)
+      ? (raw.customContentKinds.filter(
+          (k) => k && typeof k.id === 'string' && typeof k.label === 'string',
+        ) as ContentKindDef[])
+      : [],
     settingsUpdatedAt: typeof raw.settingsUpdatedAt === 'number' ? raw.settingsUpdatedAt : 0,
   }
 }
@@ -275,7 +304,7 @@ export interface SyncState {
   /** 아직 서버에 올리지 못한 날짜/사람. 앱이 꺼졌다 켜져도 남아야 하므로 따로 저장한다. */
   dirtyDays: Record<ISODate, true>
   dirtyPeople: Record<string, true>
-  dirtyBooks: Record<string, true>
+  dirtyContent: Record<string, true>
   settingsDirty: boolean
   /** 증분 조회 커서 (서버 시각) */
   cursor: string | null
@@ -286,7 +315,7 @@ export function emptySyncState(): SyncState {
   return {
     dirtyDays: {},
     dirtyPeople: {},
-    dirtyBooks: {},
+    dirtyContent: {},
     settingsDirty: false,
     cursor: null,
     lastSyncedAt: null,
@@ -297,7 +326,11 @@ export function loadSyncState(): SyncState {
   try {
     const raw = localStorage.getItem(SYNC_KEY)
     if (!raw) return emptySyncState()
-    return { ...emptySyncState(), ...(JSON.parse(raw) as Partial<SyncState>) }
+    const parsed = JSON.parse(raw) as Partial<SyncState> & { dirtyBooks?: Record<string, true> }
+    const state = { ...emptySyncState(), ...parsed }
+    // 아직 못 올린 책이 남아 있는 채로 이름이 바뀌었을 수 있다. 그대로 이어받는다.
+    if (parsed.dirtyBooks) state.dirtyContent = { ...parsed.dirtyBooks, ...state.dirtyContent }
+    return state
   } catch {
     return emptySyncState()
   }
