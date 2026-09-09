@@ -17,9 +17,11 @@ import { formatDuration, formatMinutes, formatPace, runSeconds, snsTotal } from 
 import { newId } from '../../lib/storage'
 import { formatTime } from '../../lib/date'
 import {
+  ALCOHOL_KINDS,
   BUILTIN_CONTENT_KINDS,
   CONTENT_COLORS,
   CONTENT_FIELD_LABEL,
+  DRINK_UNITS,
   EVENT_KIND_COLOR,
   EVENT_KIND_LABEL,
   INTENSITY_LABEL,
@@ -31,6 +33,7 @@ import {
   WORKOUT_PARTS,
   isRunning,
   type ContentField,
+  type Drink,
   type EventKind,
   type ISODate,
   type Intensity,
@@ -992,8 +995,144 @@ export function DietSection({ date }: SectionProps) {
             }
           />
         </div>
+
+        <div className="field">
+          <span className="field-label">음주</span>
+          <Segmented
+            options={[
+              { value: 'yes', label: 'O 마심' },
+              { value: 'no', label: 'X 안 마심' },
+            ]}
+            value={diet.alcohol === null ? null : diet.alcohol ? 'yes' : 'no'}
+            onChange={(v) =>
+              updateDay(date, (d) => ({
+                diet: {
+                  ...d.diet,
+                  alcohol: v === null ? null : v === 'yes',
+                  // 안 마셨다고 했으면 적어둔 주종도 같이 비운다.
+                  // 안 보이는 칸에 숫자가 남아 있으면 기록과 어긋난다.
+                  drinks: v === 'yes' ? d.diet.drinks : [],
+                },
+              }))
+            }
+          />
+        </div>
+
+        {diet.alcohol && <DrinkList date={date} drinks={diet.drinks} />}
       </div>
     </Card>
+  )
+}
+
+/** 마신 술을 주종별로 한 줄씩. 소주 1병 + 맥주 2잔처럼 섞이는 날이 흔하다. */
+function DrinkList({ date, drinks }: SectionProps & { drinks: Drink[] }) {
+  const { updateDay } = useStore()
+  const [adding, setAdding] = useState(false)
+  const [custom, setCustom] = useState('')
+
+  const patch = (next: Drink[]) =>
+    updateDay(date, (d) => ({ diet: { ...d.diet, alcohol: true, drinks: next } }))
+
+  const add = (kind: string, unit: string) => {
+    const clean = kind.trim()
+    if (!clean) return
+    patch([...drinks, { id: newId(), kind: clean, amount: 1, unit }])
+  }
+
+  const edit = (id: string, next: Partial<Drink>) =>
+    patch(drinks.map((x) => (x.id === id ? { ...x, ...next } : x)))
+
+  const used = new Set(drinks.map((x) => x.kind))
+
+  return (
+    <div className="stack" style={{ marginTop: 4 }}>
+      {drinks.map((drink) => (
+        <div key={drink.id} className="drink-row">
+          <div className="drink-head">
+            <span style={{ fontWeight: 700, fontSize: 14 }}>{drink.kind}</span>
+            <button
+              type="button"
+              className="icon-btn plain"
+              aria-label={`${drink.kind} 삭제`}
+              onClick={() => patch(drinks.filter((x) => x.id !== drink.id))}
+            >
+              <TrashIcon />
+            </button>
+          </div>
+          <div className="drink-amount">
+            <input
+              className="input"
+              type="number"
+              inputMode="decimal"
+              step="0.5"
+              min={0}
+              aria-label={`${drink.kind} 양`}
+              value={drink.amount}
+              onChange={(e) =>
+                edit(drink.id, { amount: e.target.value === '' ? 0 : Number(e.target.value) })
+              }
+            />
+            <span className="chips">
+              {DRINK_UNITS.map((u) => (
+                <Chip key={u} active={drink.unit === u} onClick={() => edit(drink.id, { unit: u })}>
+                  {u}
+                </Chip>
+              ))}
+            </span>
+          </div>
+        </div>
+      ))}
+
+      {adding ? (
+        <div className="input-row">
+          <input
+            className="input"
+            autoFocus
+            placeholder="주종 이름"
+            value={custom}
+            onChange={(e) => setCustom(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                add(custom, DRINK_UNITS[0])
+                setCustom('')
+                setAdding(false)
+              }
+              if (e.key === 'Escape') {
+                setCustom('')
+                setAdding(false)
+              }
+            }}
+          />
+          <button
+            type="button"
+            className="btn primary sm"
+            onClick={() => {
+              add(custom, DRINK_UNITS[0])
+              setCustom('')
+              setAdding(false)
+            }}
+          >
+            추가
+          </button>
+        </div>
+      ) : (
+        <div className="chips">
+          {ALCOHOL_KINDS.filter((k) => !used.has(k.label)).map((k) => (
+            <button
+              key={k.label}
+              type="button"
+              className="chip"
+              onClick={() => add(k.label, k.unit)}
+            >
+              + {k.label}
+            </button>
+          ))}
+          <button type="button" className="chip" onClick={() => setAdding(true)}>
+            + 직접 추가
+          </button>
+        </div>
+      )}
+    </div>
   )
 }
 

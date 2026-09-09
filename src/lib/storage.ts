@@ -2,6 +2,7 @@ import type {
   AppData,
   ContentItem,
   ContentLog,
+  Drink,
   DayEvent,
   DayRecord,
   ISODate,
@@ -14,6 +15,7 @@ import type {
 import type { TimeCategory } from './types'
 import {
   DEFAULT_NOTIFICATIONS,
+  DRINK_UNITS,
   TIME_COLORS,
   LEGACY_RUNNING_PART,
   RUNNING_PART,
@@ -122,6 +124,19 @@ function pickTombstones(raw: unknown): Record<string, number> {
   return raw && typeof raw === 'object' ? (raw as Record<string, number>) : {}
 }
 
+/** 주종이 없으면 무엇을 마신 줄인지 알 수 없으므로 버린다. */
+function normalizeDrink(raw: unknown): Drink | null {
+  const d = (raw ?? {}) as Partial<Drink>
+  if (typeof d.kind !== 'string' || !d.kind) return null
+  const amount = typeof d.amount === 'number' && Number.isFinite(d.amount) ? d.amount : 1
+  return {
+    id: typeof d.id === 'string' ? d.id : newId(),
+    kind: d.kind,
+    amount: Math.max(0, amount),
+    unit: typeof d.unit === 'string' && d.unit ? d.unit : DRINK_UNITS[0],
+  }
+}
+
 /** 0이나 음수, NaN은 '안 적었다'로 본다. 0km 러닝은 기록이 아니다. */
 function positive(v: unknown): number | null {
   return typeof v === 'number' && Number.isFinite(v) && v > 0 ? v : null
@@ -180,6 +195,10 @@ export function normalizeDay(date: ISODate, raw: unknown): DayRecord {
       ...base.diet,
       ...(d.diet ?? {}),
       meals: Array.isArray(d.diet?.meals) ? d.diet.meals : base.diet.meals,
+      alcohol: typeof d.diet?.alcohol === 'boolean' ? d.diet.alcohol : base.diet.alcohol,
+      drinks: Array.isArray(d.diet?.drinks)
+        ? d.diet.drinks.map(normalizeDrink).filter((x): x is Drink => x !== null)
+        : base.diet.drinks,
       // 크레아틴은 예전에 1~5 척도였다. 옛 기록의 숫자는 '먹었다/안 먹었다'로 옮긴다.
       creatine:
         typeof d.diet?.creatine === 'number'
