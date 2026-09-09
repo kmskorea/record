@@ -65,12 +65,21 @@ export interface Condition {
   reason: string
 }
 
+export interface Running {
+  /** 뛴 거리(km) */
+  km: number | null
+  /** 1km 평균 페이스를 초로. 5'30"/km면 330 */
+  paceSec: number | null
+}
+
 export interface Workout {
   /** null = 아직 기록 안 함, false = 안 함, true = 함 */
   did: boolean | null
-  /** 가슴/등/어깨/팔/코어/하체/유산소 등 다중 선택 */
+  /** 가슴/등/어깨/팔/코어/하체/러닝 등 다중 선택 */
   parts: string[]
   intensity: Intensity | null
+  /** 부위에 '러닝'을 골랐을 때만 쓰는 칸 */
+  running: Running
   memo: string
 }
 
@@ -202,7 +211,22 @@ export interface AppData {
   settingsUpdatedAt: number
 }
 
-export const WORKOUT_PARTS = ['가슴', '등', '어깨', '팔', '코어', '하체', '유산소'] as const
+/** 부위 중에서 이것만 거리·페이스를 따로 받는다. */
+export const RUNNING_PART = '러닝'
+
+/** 예전 이름. 옛 기록의 '유산소'는 읽을 때 '러닝'으로 옮긴다. */
+export const LEGACY_RUNNING_PART = '유산소'
+
+export const WORKOUT_PARTS = ['가슴', '등', '어깨', '팔', '코어', '하체', RUNNING_PART] as const
+
+/** 러닝 말고 다른 부위를 하나라도 골랐으면 근력 운동으로 본다. */
+export function isStrength(parts: string[]): boolean {
+  return parts.some((p) => p !== RUNNING_PART)
+}
+
+export function isRunning(parts: string[]): boolean {
+  return parts.includes(RUNNING_PART)
+}
 
 export const MEAL_LABELS = ['아침', '점심', '저녁', '간식'] as const
 
@@ -231,7 +255,13 @@ export function emptyDay(date: ISODate): DayRecord {
     sleep: { hours: null, bedTime: null, wakeTime: null },
     condition: { score: null, reason: '' },
     ideas: [],
-    workout: { did: null, parts: [], intensity: null, memo: '' },
+    workout: {
+      did: null,
+      parts: [],
+      intensity: null,
+      running: { km: null, paceSec: null },
+      memo: '',
+    },
     weight: null,
     diet: { meals: [], protein: null, water: null, creatine: null, sugar: null },
     interactions: [],
