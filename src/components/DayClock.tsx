@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { SLOT_COUNT, TIME_COLORS, slotLabel, type TimeCategory } from '../lib/types'
 
 // 바깥 원 밖에 시각 숫자를 두므로 그만큼 여백을 두고 그린다
@@ -69,6 +69,28 @@ export function DayClock({
     null,
   )
   const usedPointer = useRef(false)
+  const svgRef = useRef<SVGSVGElement>(null)
+
+  /**
+   * 칠하는 동안 페이지가 스크롤되지 않게 직접 막는다.
+   *
+   * touch-action: none 만으로는 부족하다. 실제로 달력 상세(모달이라 페이지
+   * 스크롤이 잠겨 있다)에서는 잘 되는데 오늘 화면에서는 안 됐다. 문지르는
+   * 손을 스크롤이 가로채고, 브라우저가 포인터를 취소해버리기 때문이다.
+   *
+   * React가 붙이는 touchmove 리스너는 passive라 preventDefault가 통하지
+   * 않으므로 여기서 직접 단다. 칠하는 중일 때만 막아서, 시계 밖이나 가운데
+   * 빈 곳에서 시작한 손짓은 평소대로 스크롤되게 둔다.
+   */
+  useEffect(() => {
+    const el = svgRef.current
+    if (!el) return
+    const block = (e: TouchEvent) => {
+      if (painting.current) e.preventDefault()
+    }
+    el.addEventListener('touchmove', block, { passive: false })
+    return () => el.removeEventListener('touchmove', block)
+  }, [])
 
   const valueAt = (i: number) => (draft?.has(i) ? draft.get(i)! : slots[i])
 
@@ -129,6 +151,7 @@ export function DayClock({
   return (
     <div className="clock-wrap">
       <svg
+        ref={svgRef}
         viewBox={`0 0 ${SIZE} ${SIZE}`}
         className="clock"
         role="group"
