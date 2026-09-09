@@ -115,6 +115,7 @@ npm test         # 동기화 병합 규칙 검증
 | 그래프 기간 버튼 (7/30/90일) | `src/features/calendar/TrackingChart.tsx` | `RANGES` |
 | 영양소 항목 (단백질·수분·크레아틴·당분) | `src/features/today/sections.tsx` | `DietSection`의 `nutrients` |
 | 오늘 탭 섹션 순서 | `src/features/today/TodayScreen.tsx` | JSX 순서 그대로 |
+| 할 일 끌어 옮기기 | `src/components/useDragOrder.ts` | `useDragOrder()` |
 | 전체 색·여백·폰트 | `src/styles/global.css` | 맨 위 `:root` 토큰 |
 | 동기화 주기 | `src/lib/store.tsx` | `requestSync()`의 1500ms, 주기 `60_000` |
 | 충돌 병합 규칙 | `src/lib/sync.ts` | `syncOnce()` |
