@@ -1,5 +1,12 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
-import type { AppData, Book, DayRecord, ISODate, NotificationSettings, Person } from './types'
+import type {
+  AppData,
+  ContentItem,
+  DayRecord,
+  ISODate,
+  NotificationSettings,
+  Person,
+} from './types'
 import { normalizeDay, type SyncState } from './storage'
 
 export type SyncPhase = 'unconfigured' | 'signed-out' | 'idle' | 'syncing' | 'offline' | 'error'
@@ -10,7 +17,7 @@ export interface SyncReport {
   /** 아직 서버에 못 올린 건수 */
   pending: number
   error: string | null
-  /** 서버에 books 테이블이 아직 없다. schema.sql을 다시 실행해야 한다. */
+  /** 서버에 content 테이블이 아직 없다. schema.sql을 다시 실행해야 한다. */
   schemaOutdated: boolean
 }
 
@@ -18,18 +25,18 @@ export function pendingCount(state: SyncState): number {
   return (
     Object.keys(state.dirtyDays).length +
     Object.keys(state.dirtyPeople).length +
-    Object.keys(state.dirtyBooks).length +
+    Object.keys(state.dirtyContent).length +
     (state.settingsDirty ? 1 : 0)
   )
 }
 
 /**
- * books 테이블·함수가 아직 없는 계정인지 본다.
+ * content 테이블·함수가 아직 없는 계정인지 본다.
  *
- * 독서 기능을 나중에 붙였으므로, 쓰던 사람이 앱만 새로 받고 Supabase 스키마를
+ * 저장할 것이 늘어 테이블이 추가될 때마다, 앱만 새로 받고 Supabase 스키마를
  * 아직 다시 실행하지 않은 시기가 반드시 생긴다. 그때 예외를 그냥 위로 던지면
- * 하루 기록·사람까지 통째로 동기화가 멈춘다. 책만 미루고 나머지는 계속 오가게
- * 하려고 이 오류만 따로 알아본다.
+ * 하루 기록·사람까지 통째로 동기화가 멈춘다. 새 것만 미루고 나머지는 계속
+ * 오가게 하려고 이 오류만 따로 알아본다.
  */
 function isMissingSchema(error: { code?: string; message?: string } | null): boolean {
   if (!error) return false
@@ -53,9 +60,9 @@ interface PersonRow {
   server_updated_at: string
 }
 
-interface BookRow {
+interface ContentRow {
   id: string
-  data: Book
+  data: ContentItem
   deleted: boolean
   updated_at: number
   server_updated_at: string
@@ -66,6 +73,7 @@ interface SettingsRow {
     notifications?: unknown
     customWorkoutParts?: string[]
     timeCategories?: AppData['timeCategories']
+    customContentKinds?: AppData['customContentKinds']
   }
   updated_at: number
 }
@@ -77,6 +85,7 @@ function settingsPayload(data: AppData) {
     notifications,
     customWorkoutParts: data.customWorkoutParts,
     timeCategories: data.timeCategories,
+    customContentKinds: data.customContentKinds,
   }
 }
 
@@ -85,7 +94,7 @@ export interface SyncOutcome {
   state: SyncState
   /** 서버에서 받아와 로컬이 실제로 바뀌었는지 */
   changed: boolean
-  /** books 테이블이 없어서 독서 기록만 못 올렸는지 */
+  /** content 테이블이 없어서 콘텐츠 기록만 못 올렸는지 */
   schemaOutdated: boolean
 }
 
@@ -163,28 +172,28 @@ export async function syncOnce(
     nextState.settingsDirty = false
   }
 
-  // 책은 맨 뒤에 올린다. 스키마가 아직 없는 계정이라도 앞의 것들은
+  // 콘텐츠는 맨 뒤에 올린다. 스키마가 아직 없는 계정이라도 앞의 것들은
   // 이미 서버에 닿은 뒤라 하루 기록이 발이 묶이지 않는다.
   let schemaOutdated = false
-  const dirtyBooks = Object.keys(state.dirtyBooks)
-  if (dirtyBooks.length > 0) {
-    const byId = new Map(next.books.map((b) => [b.id, b]))
-    const rows = dirtyBooks.map((id) => {
-      const book = byId.get(id)
-      if (book) {
-        return { id, data: book, deleted: false, updated_at: book.updatedAt || Date.now() }
+  const dirtyContent = Object.keys(state.dirtyContent)
+  if (dirtyContent.length > 0) {
+    const byId = new Map(next.content.map((c) => [c.id, c]))
+    const rows = dirtyContent.map((id) => {
+      const item = byId.get(id)
+      if (item) {
+        return { id, data: item, deleted: false, updated_at: item.updatedAt || Date.now() }
       }
-      return { id, data: { id }, deleted: true, updated_at: next.deletedBooks[id] ?? Date.now() }
+      return { id, data: { id }, deleted: true, updated_at: next.deletedContent[id] ?? Date.now() }
     })
-    const { error } = await client.rpc('merge_books', { rows })
+    const { error } = await client.rpc('merge_content', { rows })
     if (error && !isMissingSchema(error)) throw error
     if (error) {
       // 못 올렸으니 표시를 지우지 않는다. 스키마를 실행하면 그대로 올라간다.
       schemaOutdated = true
     } else {
-      const remaining = { ...nextState.dirtyBooks }
-      for (const id of dirtyBooks) delete remaining[id]
-      nextState.dirtyBooks = remaining
+      const remaining = { ...nextState.dirtyContent }
+      for (const id of dirtyContent) delete remaining[id]
+      nextState.dirtyContent = remaining
     }
   }
 
@@ -211,11 +220,11 @@ export async function syncOnce(
     .maybeSingle()
   if (settingsErr) throw settingsErr
 
-  let bookQuery = client.from('books').select('id, data, deleted, updated_at, server_updated_at')
-  if (since) bookQuery = bookQuery.gt('server_updated_at', since)
-  const { data: bookRows, error: bookErr } = await bookQuery
-  if (bookErr && !isMissingSchema(bookErr)) throw bookErr
-  if (bookErr) schemaOutdated = true
+  let contentQuery = client.from('content').select('id, data, deleted, updated_at, server_updated_at')
+  if (since) contentQuery = contentQuery.gt('server_updated_at', since)
+  const { data: contentRows, error: contentErr } = await contentQuery
+  if (contentErr && !isMissingSchema(contentErr)) throw contentErr
+  if (contentErr) schemaOutdated = true
 
   // ── 3. 병합 ────────────────────────────────────────────────────────────────
   let changed = false
@@ -269,37 +278,38 @@ export async function syncOnce(
     }
   }
 
-  // 책은 사람과 같은 규칙으로 합친다. 지운 것은 묘비를 남기고,
+  // 콘텐츠는 사람과 같은 규칙으로 합친다. 지운 것은 묘비를 남기고,
   // 서버에 없다는 이유만으로 로컬에서 지우지 않는다.
-  const books = [...next.books]
-  const deletedBooks = { ...next.deletedBooks }
-  const bookIndex = new Map(books.map((b, i) => [b.id, i]))
-  for (const row of (bookRows ?? []) as BookRow[]) {
+  const content = [...next.content]
+  const deletedContent = { ...next.deletedContent }
+  const contentIndex = new Map(content.map((c, i) => [c.id, i]))
+  for (const row of (contentRows ?? []) as ContentRow[]) {
     if (row.server_updated_at && (!cursor || row.server_updated_at > cursor)) {
       cursor = row.server_updated_at
     }
-    if (nextState.dirtyBooks[row.id]) continue
-    const at = bookIndex.get(row.id)
-    const localAt = (at === undefined ? undefined : books[at]?.updatedAt) ?? deletedBooks[row.id] ?? 0
+    if (nextState.dirtyContent[row.id]) continue
+    const at = contentIndex.get(row.id)
+    const localAt =
+      (at === undefined ? undefined : content[at]?.updatedAt) ?? deletedContent[row.id] ?? 0
     if (row.updated_at <= localAt) continue
 
     if (row.deleted) {
       if (at !== undefined) {
-        books.splice(at, 1)
-        bookIndex.clear()
-        books.forEach((b, i) => bookIndex.set(b.id, i))
+        content.splice(at, 1)
+        contentIndex.clear()
+        content.forEach((c, i) => contentIndex.set(c.id, i))
         changed = true
       }
-      deletedBooks[row.id] = row.updated_at
+      deletedContent[row.id] = row.updated_at
     } else {
-      const book: Book = { ...row.data, id: row.id, updatedAt: row.updated_at }
+      const item: ContentItem = { ...row.data, id: row.id, updatedAt: row.updated_at }
       if (at === undefined) {
-        bookIndex.set(row.id, books.length)
-        books.push(book)
+        contentIndex.set(row.id, content.length)
+        content.push(item)
       } else {
-        books[at] = book
+        content[at] = item
       }
-      delete deletedBooks[row.id]
+      delete deletedContent[row.id]
       changed = true
     }
   }
@@ -307,6 +317,7 @@ export async function syncOnce(
   let notifications = next.notifications
   let customWorkoutParts = next.customWorkoutParts
   let timeCategories = next.timeCategories
+  let customContentKinds = next.customContentKinds
   let settingsUpdatedAt = next.settingsUpdatedAt
   const remoteSettings = settingsRow as SettingsRow | null
   if (
@@ -327,6 +338,9 @@ export async function syncOnce(
     if (Array.isArray(incoming.timeCategories)) {
       timeCategories = incoming.timeCategories
     }
+    if (Array.isArray(incoming.customContentKinds)) {
+      customContentKinds = incoming.customContentKinds
+    }
     settingsUpdatedAt = remoteSettings.updated_at
     changed = true
   }
@@ -335,12 +349,13 @@ export async function syncOnce(
     ...next,
     days,
     people,
-    books,
+    content,
     deletedPeople,
-    deletedBooks,
+    deletedContent,
     notifications,
     customWorkoutParts,
     timeCategories,
+    customContentKinds,
     settingsUpdatedAt,
   }
   nextState = { ...nextState, cursor, lastSyncedAt: Date.now() }
@@ -358,8 +373,8 @@ export function markEverythingDirty(data: AppData, state: SyncState): SyncState 
   const dirtyPeople: Record<string, true> = { ...state.dirtyPeople }
   for (const person of data.people) dirtyPeople[person.id] = true
   for (const id of Object.keys(data.deletedPeople)) dirtyPeople[id] = true
-  const dirtyBooks: Record<string, true> = { ...state.dirtyBooks }
-  for (const book of data.books) dirtyBooks[book.id] = true
-  for (const id of Object.keys(data.deletedBooks)) dirtyBooks[id] = true
-  return { ...state, dirtyDays, dirtyPeople, dirtyBooks, settingsDirty: true }
+  const dirtyContent: Record<string, true> = { ...state.dirtyContent }
+  for (const item of data.content) dirtyContent[item.id] = true
+  for (const id of Object.keys(data.deletedContent)) dirtyContent[id] = true
+  return { ...state, dirtyDays, dirtyPeople, dirtyContent, settingsDirty: true }
 }

@@ -3,7 +3,7 @@ import { CalendarScreen } from './features/calendar/CalendarScreen'
 import { TodayScreen } from './features/today/TodayScreen'
 import { SearchScreen } from './features/search/SearchScreen'
 import { PersonSheet } from './features/search/PersonSheet'
-import { BookSheet } from './features/search/BookSheet'
+import { ContentSheet } from './features/search/ContentSheet'
 import { DayDetailSheet } from './features/calendar/DayDetailSheet'
 import { CalendarIcon, SearchIcon, TodayIcon } from './components/icons'
 import { useStore } from './lib/store'
@@ -22,19 +22,19 @@ export function App() {
   const { data, markNotificationFired } = useStore()
   const [tab, setTab] = useState<Tab>('today')
   const [personId, setPersonId] = useState<string | null>(null)
-  const [bookId, setBookId] = useState<string | null>(null)
+  const [contentId, setContentId] = useState<string | null>(null)
   const [dayDate, setDayDate] = useState<ISODate | null>(null)
 
   useNotificationScheduler(data.notifications, markNotificationFired)
 
   return (
     <div className="app">
-      {tab === 'flow' && <CalendarScreen onOpenPerson={setPersonId} onOpenBook={setBookId} />}
-      {tab === 'today' && <TodayScreen onOpenPerson={setPersonId} onOpenBook={setBookId} />}
+      {tab === 'flow' && <CalendarScreen onOpenPerson={setPersonId} onOpenContent={setContentId} />}
+      {tab === 'today' && <TodayScreen onOpenPerson={setPersonId} onOpenContent={setContentId} />}
       {tab === 'search' && (
         <SearchScreen
           onOpenPerson={setPersonId}
-          onOpenBook={setBookId}
+          onOpenContent={setContentId}
           onOpenDate={setDayDate}
         />
       )}
@@ -66,12 +66,12 @@ export function App() {
         />
       )}
 
-      {bookId && (
-        <BookSheet
-          bookId={bookId}
-          onClose={() => setBookId(null)}
+      {contentId && (
+        <ContentSheet
+          itemId={contentId}
+          onClose={() => setContentId(null)}
           onOpenDate={(date) => {
-            setBookId(null)
+            setContentId(null)
             setDayDate(date)
           }}
         />
@@ -85,9 +85,9 @@ export function App() {
             setDayDate(null)
             setPersonId(id)
           }}
-          onOpenBook={(id) => {
+          onOpenContent={(id) => {
             setDayDate(null)
-            setBookId(id)
+            setContentId(id)
           }}
         />
       )}
