@@ -292,6 +292,21 @@ export interface Diet {
   drinks: Drink[]
 }
 
+/**
+ * 매일 그대로 서는 할 일. 날마다 등록하지 않아도 오늘 할 일에 붙고,
+ * 직접 지울 때까지 사라지지 않는다. 하루 기록이 아니라 따로 서 있는 것이라
+ * 사람·콘텐츠처럼 자기 줄을 갖는다.
+ */
+export interface Routine {
+  id: string
+  title: string
+  /** 'HH:MM'. 시각이 정해지지 않은 루틴은 null */
+  time: string | null
+  createdAt: number
+  /** 기기 간 최신본 판정 기준 */
+  updatedAt: number
+}
+
 export type EventKind = 'appointment' | 'deadline' | 'task'
 
 export const EVENT_KIND_LABEL: Record<EventKind, string> = {
@@ -383,6 +398,8 @@ export interface DayRecord {
   timeSlots: (string | null)[]
   /** 앱별 스크린 타임(분). 안 적은 앱은 아예 없다. */
   screenTime: Record<string, number>
+  /** 그날 해낸 루틴의 id. 루틴 자체는 날짜에 매달리지 않고 체크만 날마다 다르다. */
+  routineDone: Record<string, true>
   updatedAt: number
 }
 
@@ -403,6 +420,7 @@ export interface AppData {
   people: Person[]
   content: ContentItem[]
   thoughts: Thought[]
+  routines: Routine[]
   notifications: NotificationSettings
   /** 사용자가 직접 추가한 운동 부위 */
   customWorkoutParts: string[]
@@ -426,6 +444,7 @@ export interface AppData {
   deletedTimeCategories: Record<string, number>
   deletedContentKinds: Record<string, number>
   deletedThoughts: Record<string, number>
+  deletedRoutines: Record<string, number>
   /** 사용자가 직접 만든 콘텐츠 유형 (팟캐스트, 전시 …) */
   customContentKinds: ContentKindDef[]
   /** 알림 시각·운동 부위 같은 설정의 최종 수정 시각 */
@@ -513,6 +532,7 @@ export function emptyDay(date: ISODate): DayRecord {
     events: [],
     timeSlots: Array.from({ length: SLOT_COUNT }, () => null),
     screenTime: {},
+    routineDone: {},
     updatedAt: 0,
   }
 }

@@ -56,6 +56,7 @@ export function CalendarScreen({
             days={data.days}
             people={data.people}
             timeCategories={data.timeCategories}
+            routines={data.routines}
             onOpenPerson={onOpenPerson}
             onOpenDate={setSelected}
           />

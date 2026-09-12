@@ -17,6 +17,7 @@ import type {
   ISODate,
   NotificationSettings,
   Person,
+  Routine,
   Thought,
   ThoughtLevel,
   TimeCategory,
@@ -63,6 +64,10 @@ interface StoreValue {
   /** 고른 것들을 한 단계 위로 묶는다. 묶인 것은 재료로 그대로 남는다 */
   groupThoughts: (ids: string[], title: string) => Thought | null
   setThoughtParent: (id: string, parentId: string | null) => void
+
+  // 루틴 — 날마다 등록하지 않아도 서 있는 할 일
+  addRoutine: (title: string, time: string | null) => Routine | null
+  deleteRoutine: (id: string) => void
   setNotifications: (patch: Partial<NotificationSettings>) => void
   markNotificationFired: (slot: string, date: ISODate) => void
   addCustomWorkoutPart: (part: string) => void
@@ -553,6 +558,39 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     [touchThoughts],
   )
 
+  const addRoutine = useCallback<StoreValue['addRoutine']>(
+    (title, time) => {
+      const clean = title.trim()
+      if (!clean) return null
+      const now = Date.now()
+      const routine: Routine = { id: newId(), title: clean, time: time || null, createdAt: now, updatedAt: now }
+      const nextData: AppData = {
+        ...dataRef.current,
+        routines: [...dataRef.current.routines, routine],
+      }
+      dataRef.current = nextData
+      commit(nextData, (s) => ({ ...s, dirtyRoutines: { ...s.dirtyRoutines, [routine.id]: true } }))
+      return routine
+    },
+    [commit],
+  )
+
+  const deleteRoutine = useCallback<StoreValue['deleteRoutine']>(
+    (id) => {
+      const now = Date.now()
+      // 체크해둔 기록까지 뒤지지는 않는다. 루틴이 없어지면 그 체크는 어디에도
+      // 안 쓰이고, 하루 기록을 전부 건드리면 괜히 충돌만 늘어난다.
+      const nextData: AppData = {
+        ...dataRef.current,
+        routines: dataRef.current.routines.filter((r) => r.id !== id),
+        deletedRoutines: { ...dataRef.current.deletedRoutines, [id]: now },
+      }
+      dataRef.current = nextData
+      commit(nextData, (s) => ({ ...s, dirtyRoutines: { ...s.dirtyRoutines, [id]: true } }))
+    },
+    [commit],
+  )
+
   const setNotifications = useCallback<StoreValue['setNotifications']>(
     (patch) => {
       const nextData: AppData = {
@@ -748,6 +786,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       deleteThought,
       groupThoughts,
       setThoughtParent,
+      addRoutine,
+      deleteRoutine,
       setNotifications,
       markNotificationFired,
       addCustomWorkoutPart,
@@ -781,6 +821,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       deleteThought,
       groupThoughts,
       setThoughtParent,
+      addRoutine,
+      deleteRoutine,
       setNotifications,
       markNotificationFired,
       addCustomWorkoutPart,

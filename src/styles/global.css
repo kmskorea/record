@@ -2028,6 +2028,20 @@ input[type='number'] {
   color: var(--ink-3);
 }
 
+/* 손잡이 없는 줄(루틴)이 손잡이 있는 줄과 체크칸을 나란히 맞추도록 */
+.todo-handle-gap {
+  flex-shrink: 0;
+  width: 14px;
+  margin-left: -4px;
+}
+
+/* 루틴은 매일 서 있는 것이라 그날 목록과 눈으로 구분되게 아래에 선을 둔다. */
+.routine-list {
+  padding-bottom: 6px;
+  margin-bottom: 6px;
+  border-bottom: 1px dashed var(--line-strong);
+}
+
 /* ── 반추 ─────────────────────────────────────────────────────────────────── */
 .thought {
   display: flex;

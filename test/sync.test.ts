@@ -1,5 +1,6 @@
 import { syncOnce, markEverythingDirty, pendingCount } from '../src/lib/sync'
 import { emptySyncState, migrate, type SyncState } from '../src/lib/storage'
+import { todoRate } from '../src/lib/metrics'
 import { emptyDay, type AppData, type ContentItem, type Person } from '../src/lib/types'
 
 let pass = 0
@@ -770,6 +771,53 @@ function contentDay(date: string, itemId: string, quote: string, updatedAt: numb
   const afterB = await syncOnce(fakeClient(store), b.data, b.state)
   check('B에서도 사라진다', !afterB.data.thoughts.some((t) => t.id === 'p1'), JSON.stringify(afterB.data.thoughts))
   check('묘비가 남는다', afterB.data.deletedThoughts.p1 === 9000)
+}
+
+// ── 23. 루틴은 날짜에 매달리지 않고 기기 사이를 오간다 ────────────────────
+{
+  const store: Store = { days: [], objects: [], settings: null }
+  const a = makeData({
+    routines: [{ id: 'r1', title: '아침 스트레칭', time: '07:30', createdAt: 1000, updatedAt: 1000 }],
+    days: { '2026-09-01': { ...emptyDay('2026-09-01'), routineDone: { r1: true }, updatedAt: 1000 } },
+  })
+  await syncOnce(fakeClient(store), a, markEverythingDirty(a, emptySyncState()))
+  check('루틴이 서버로 올라간다', rowsOf(store, 'routine').length === 1)
+  check('루틴은 하루 기록이 아니다', row(store, 'routine', 'r1')?.data.title === '아침 스트레칭')
+
+  const b = await syncOnce(fakeClient(store), makeData({}), emptySyncState())
+  check('다른 기기가 루틴을 받아온다', b.data.routines[0]?.title === '아침 스트레칭', JSON.stringify(b.data.routines))
+  check('체크는 그날 기록으로 온다', b.data.days['2026-09-01']?.routineDone.r1 === true)
+
+  // 지운 루틴은 되살아나지 않는다
+  const gone = makeData({ routines: [], deletedRoutines: { r1: 9000 } })
+  await syncOnce(fakeClient(store), gone, { ...emptySyncState(), dirtyRoutines: { r1: true } })
+  const afterB = await syncOnce(fakeClient(store), b.data, b.state)
+  check('B에서도 사라진다', afterB.data.routines.length === 0, JSON.stringify(afterB.data.routines))
+  check('묘비가 남는다', afterB.data.deletedRoutines.r1 === 9000)
+}
+
+// ── 24. 완수율은 그날 서 있던 루틴까지 센다 ────────────────────────────────
+{
+  const day = {
+    ...emptyDay('2026-09-10'),
+    todos: [{ id: 't1', text: '하나', done: true, createdAt: 1, order: 0 }],
+    routineDone: { r1: true },
+  }
+  const routines = [
+    // 그날 이전에 만든 둘 — 화면에 서 있었다
+    { id: 'r1', title: '스트레칭', time: null, createdAt: Date.parse('2026-09-01'), updatedAt: 1 },
+    { id: 'r2', title: '명상', time: null, createdAt: Date.parse('2026-09-01'), updatedAt: 1 },
+    // 그날 이후에 만든 것 — 세면 안 된다
+    { id: 'r3', title: '나중 루틴', time: null, createdAt: Date.parse('2026-09-20'), updatedAt: 1 },
+  ]
+  const rate = todoRate(day, routines)
+  check('루틴을 포함해 센다 (2/3)', rate !== null && Math.round(rate) === 67, String(rate))
+  check('루틴이 없으면 예전과 같다 (1/1)', todoRate(day) === 100, String(todoRate(day)))
+  check(
+    '나중에 만든 루틴은 지난 날에서 빠진다',
+    todoRate(day, [routines[2]]) === 100,
+    String(todoRate(day, [routines[2]])),
+  )
 }
 
 console.log(`\n${pass} passed, ${fail} failed`)

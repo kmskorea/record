@@ -34,6 +34,13 @@ export const ReflectIcon = (p: P) => (
   </svg>
 )
 
+/** 내일로 미루기 */
+export const ArrowRightIcon = (p: P) => (
+  <svg {...base} {...p}>
+    <path d="M5 12h13M13 6l6 6-6 6" />
+  </svg>
+)
+
 export const SearchIcon = (p: P) => (
   <svg {...base} {...p}>
     <circle cx="11" cy="11" r="7" />

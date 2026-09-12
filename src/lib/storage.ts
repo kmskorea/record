@@ -9,6 +9,7 @@ import type {
   InnerState,
   Level,
   Person,
+  Routine,
   Thought,
   ThoughtLevel,
   Todo,
@@ -38,6 +39,7 @@ export function emptyData(): AppData {
     people: [],
     content: [],
     thoughts: [],
+    routines: [],
     notifications: { ...DEFAULT_NOTIFICATIONS, lastFired: {} },
     customWorkoutParts: [],
     timeCategories: [],
@@ -46,6 +48,7 @@ export function emptyData(): AppData {
     deletedTimeCategories: {},
     deletedContentKinds: {},
     deletedThoughts: {},
+    deletedRoutines: {},
     customContentKinds: [],
     settingsUpdatedAt: 0,
   }
@@ -98,6 +101,20 @@ function normalizeInnerState(raw: unknown, base: InnerState): InnerState {
  * 일부러 지운 유형은 칸도 같이 비우므로(deleteTimeCategory) 되살아나지 않는다.
  */
 const LEVELS: ThoughtLevel[] = ['sentence', 'paragraph', 'essay']
+
+function normalizeRoutine(raw: unknown): Routine | null {
+  if (!raw || typeof raw !== 'object') return null
+  const r = raw as Partial<Routine>
+  if (!r.id || typeof r.id !== 'string') return null
+  const at = typeof r.createdAt === 'number' ? r.createdAt : Date.now()
+  return {
+    id: r.id,
+    title: typeof r.title === 'string' ? r.title : '',
+    time: typeof r.time === 'string' && r.time ? r.time : null,
+    createdAt: at,
+    updatedAt: typeof r.updatedAt === 'number' ? r.updatedAt : at,
+  }
+}
 
 function normalizeThought(raw: unknown): Thought | null {
   if (!raw || typeof raw !== 'object') return null
@@ -268,6 +285,12 @@ export function normalizeDay(date: ISODate, raw: unknown): DayRecord {
       const v = Array.isArray(d.timeSlots) ? d.timeSlots[i] : null
       return typeof v === 'string' ? v : null
     }),
+    routineDone:
+      d.routineDone && typeof d.routineDone === 'object'
+        ? (Object.fromEntries(
+            Object.entries(d.routineDone).filter(([, v]) => v === true),
+          ) as Record<string, true>)
+        : base.routineDone,
     screenTime:
       d.screenTime && typeof d.screenTime === 'object'
         ? Object.fromEntries(
@@ -381,6 +404,10 @@ export function migrate(input: unknown): AppData {
     .map(normalizeContentItem)
     .filter((b): b is ContentItem => b !== null)
 
+  const routines = Array.isArray(raw.routines)
+    ? raw.routines.map(normalizeRoutine).filter((r): r is Routine => r !== null)
+    : []
+
   const deletedThoughts = pickTombstones(raw.deletedThoughts)
   const thoughts = migrateIdeas(
     days,
@@ -396,6 +423,7 @@ export function migrate(input: unknown): AppData {
     people,
     content,
     thoughts,
+    routines,
     notifications: { ...base.notifications, ...(raw.notifications ?? {}) },
     // 예전에 직접 추가해둔 이름이 기본 부위가 되는 일이 있다('러닝'). 칩이 두 번
     // 나오지 않게 기본 목록과 겹치는 건 여기서 걷어낸다.
@@ -421,6 +449,7 @@ export function migrate(input: unknown): AppData {
     deletedTimeCategories: pickTombstones(raw.deletedTimeCategories),
     deletedContentKinds: pickTombstones(raw.deletedContentKinds),
     deletedThoughts,
+    deletedRoutines: pickTombstones(raw.deletedRoutines),
     customContentKinds: Array.isArray(raw.customContentKinds)
       ? raw.customContentKinds
           .filter((k) => k && typeof k.id === 'string' && typeof k.label === 'string')
@@ -456,6 +485,7 @@ export interface SyncState {
   dirtyContent: Record<string, true>
   dirtyTimeCategories: Record<string, true>
   dirtyThoughts: Record<string, true>
+  dirtyRoutines: Record<string, true>
   dirtyContentKinds: Record<string, true>
   settingsDirty: boolean
   /** 증분 조회 커서 (서버 시각) */
@@ -470,6 +500,7 @@ export function emptySyncState(): SyncState {
     dirtyContent: {},
     dirtyTimeCategories: {},
     dirtyThoughts: {},
+    dirtyRoutines: {},
     dirtyContentKinds: {},
     settingsDirty: false,
     cursor: null,
