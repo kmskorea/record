@@ -3,7 +3,6 @@ import {
   BodySection,
   ContentSection,
   DietSection,
-  IdeaSection,
   InnerStateSection,
   PeopleSection,
   ReflectionSection,
@@ -58,9 +57,6 @@ export function TodayScreen({
         <SleepSection date={today} />
         <InnerStateSection date={today} />
       </div>
-
-      <div className="section-label">하루 중</div>
-      <IdeaSection date={today} />
 
       <div className="section-label">사후 관리</div>
       <div className="masonry">

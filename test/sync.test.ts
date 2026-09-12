@@ -716,5 +716,61 @@ function contentDay(date: string, itemId: string, quote: string, updatedAt: numb
   )
 }
 
+// ── 21. 옛 아이디어가 반추의 문장이 되고, 중복되지 않는다 ──────────────────
+{
+  const raw = {
+    days: {
+      '2026-09-01': {
+        date: '2026-09-01',
+        ideas: [{ id: 'i1', text: '스친 생각', at: 1700 }],
+        updatedAt: 1,
+      },
+    },
+  }
+  const once = migrate(raw)
+  check('아이디어가 문장이 된다', once.thoughts.length === 1, JSON.stringify(once.thoughts))
+  check('id를 물려받는다', once.thoughts[0].id === 'i1')
+  check("단계는 '문장'", once.thoughts[0].level === 'sentence')
+  check('적은 시각도 그대로', once.thoughts[0].createdAt === 1700)
+  check('하루 기록의 아이디어는 그대로 둔다', once.days['2026-09-01'].ideas.length === 1)
+
+  // 이미 옮긴 상태를 다시 지나가도 늘어나지 않는다
+  const twice = migrate({ ...raw, thoughts: once.thoughts })
+  check('두 번 지나가도 하나', twice.thoughts.length === 1, JSON.stringify(twice.thoughts))
+
+  // 반추에서 지운 것은 되살아나지 않는다
+  const deleted = migrate({ ...raw, thoughts: [], deletedThoughts: { i1: 9000 } })
+  check('지운 문장은 되살아나지 않는다', deleted.thoughts.length === 0, JSON.stringify(deleted.thoughts))
+}
+
+// ── 22. 반추도 기기 사이를 오간다 ──────────────────────────────────────────
+{
+  const store: Store = { days: [], objects: [], settings: null }
+  const now = 5000
+  const a = makeData({
+    thoughts: [
+      { id: 's1', level: 'sentence', title: '', text: '스친 문장', parentId: 'p1', createdAt: now, updatedAt: now },
+      { id: 'p1', level: 'paragraph', title: '기록에 대하여', text: '다듬은 단락', parentId: null, createdAt: now, updatedAt: now },
+    ],
+  })
+  await syncOnce(fakeClient(store), a, markEverythingDirty(a, emptySyncState()))
+  check('반추가 서버로 올라간다', rowsOf(store, 'thought').length === 2)
+
+  const b = await syncOnce(fakeClient(store), makeData({}), emptySyncState())
+  check('다른 기기가 받아온다', b.data.thoughts.length === 2, JSON.stringify(b.data.thoughts))
+  check(
+    '묶인 관계도 그대로 온다',
+    b.data.thoughts.find((t) => t.id === 's1')?.parentId === 'p1',
+    JSON.stringify(b.data.thoughts),
+  )
+
+  // 지운 생각은 되살아나지 않는다
+  const gone = makeData({ thoughts: [], deletedThoughts: { p1: 9000 } })
+  await syncOnce(fakeClient(store), gone, { ...emptySyncState(), dirtyThoughts: { p1: true } })
+  const afterB = await syncOnce(fakeClient(store), b.data, b.state)
+  check('B에서도 사라진다', !afterB.data.thoughts.some((t) => t.id === 'p1'), JSON.stringify(afterB.data.thoughts))
+  check('묘비가 남는다', afterB.data.deletedThoughts.p1 === 9000)
+}
+
 console.log(`\n${pass} passed, ${fail} failed`)
 if (fail > 0) process.exit(1)

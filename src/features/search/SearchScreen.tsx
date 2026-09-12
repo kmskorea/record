@@ -8,7 +8,6 @@ import { BUILTIN_CONTENT_KINDS, CONTENT_COLORS, PROFILE_COLORS } from '../../lib
 
 const KIND_COLOR: Record<string, string> = {
   할일: 'var(--accent)',
-  아이디어: 'var(--yellow)',
   '내면 상태': 'var(--blue)',
   운동: 'var(--green)',
   식사: 'var(--yellow)',
@@ -16,6 +15,9 @@ const KIND_COLOR: Record<string, string> = {
   콘텐츠: 'var(--brown)',
   일기: 'var(--ink-2)',
   '한 줄 평': 'var(--blue)',
+  문장: '#93A8D4',
+  단락: '#4F7CAC',
+  글: '#1B3FD8',
 }
 
 export function SearchScreen({
@@ -41,7 +43,7 @@ export function SearchScreen({
     [data.customContentKinds],
   )
   const hits = useMemo(
-    () => searchAll(data.days, data.people, data.content, deferred),
+    () => searchAll(data.days, data.people, data.content, data.thoughts, deferred),
     [data, deferred],
   )
 
@@ -190,7 +192,7 @@ export function SearchScreen({
             {[
               '사람 이름을 검색하면 그 사람과 있었던 일이 모두 나와요.',
               '콘텐츠에서 작품을 누르면 거기에 적은 구절·소감이 한 번에 보여요.',
-              '아이디어에 적어둔 단어로 그때 무슨 생각이었는지 되찾을 수 있어요.',
+              '반추에 적어둔 문장·단락·글도 모두 찾아집니다.',
               '‘피곤’처럼 내면 상태에 적어둔 이유로도 검색됩니다.',
             ].map((tip) => (
               <li key={tip} style={{ fontSize: 13.5, color: 'var(--ink-2)', lineHeight: 1.6 }}>

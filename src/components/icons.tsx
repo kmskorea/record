@@ -27,6 +27,13 @@ export const TodayIcon = (p: P) => (
   </svg>
 )
 
+/** 반추 — 문장이 단락으로, 단락이 글로 쌓이는 모양 */
+export const ReflectIcon = (p: P) => (
+  <svg {...base} {...p}>
+    <path d="M4 6h9M4 12h13M4 18h16" />
+  </svg>
+)
+
 export const SearchIcon = (p: P) => (
   <svg {...base} {...p}>
     <circle cx="11" cy="11" r="7" />

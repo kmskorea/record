@@ -23,6 +23,66 @@ export interface Idea {
   at: number
 }
 
+/**
+ * 반추의 한 조각. 세 단계로 자란다 — 지나가는 문장을 모아 단락으로,
+ * 단락을 엮어 글로. 단계가 올라가도 재료가 된 아래 것은 그대로 남는다.
+ * 다듬은 결과만 남기면 어디서 온 생각인지 되짚을 수 없다.
+ */
+export type ThoughtLevel = 'sentence' | 'paragraph' | 'essay'
+
+export const THOUGHT_LEVELS: {
+  id: ThoughtLevel
+  label: string
+  /** 한 단계 위. 글은 더 올라갈 곳이 없다 */
+  up: ThoughtLevel | null
+  /** 깊어질수록 진해진다 */
+  color: string
+  bodyLabel: string
+  bodyPlaceholder: string
+}[] = [
+  {
+    id: 'sentence',
+    label: '문장',
+    up: 'paragraph',
+    color: '#93A8D4',
+    bodyLabel: '문장',
+    bodyPlaceholder: '떠오른 그대로',
+  },
+  {
+    id: 'paragraph',
+    label: '단락',
+    up: 'essay',
+    color: '#4F7CAC',
+    bodyLabel: '다듬은 단락',
+    bodyPlaceholder: '모아둔 문장들을 이어 하나의 생각으로',
+  },
+  {
+    id: 'essay',
+    label: '글',
+    up: null,
+    color: '#1B3FD8',
+    bodyLabel: '글',
+    bodyPlaceholder: '단락들을 엮어 하나의 글로',
+  },
+]
+
+export const THOUGHT_LEVEL = Object.fromEntries(
+  THOUGHT_LEVELS.map((l) => [l.id, l]),
+) as Record<ThoughtLevel, (typeof THOUGHT_LEVELS)[number]>
+
+export interface Thought {
+  id: string
+  level: ThoughtLevel
+  /** 단락·글의 이름. 문장에는 없다 */
+  title: string
+  text: string
+  /** 담겨 있는 상위 생각. 아직 안 묶였으면 null */
+  parentId: string | null
+  createdAt: number
+  /** 기기 간 최신본 판정 기준 */
+  updatedAt: number
+}
+
 export interface Person {
   id: string
   name: string
@@ -342,6 +402,7 @@ export interface AppData {
   days: Record<ISODate, DayRecord>
   people: Person[]
   content: ContentItem[]
+  thoughts: Thought[]
   notifications: NotificationSettings
   /** 사용자가 직접 추가한 운동 부위 */
   customWorkoutParts: string[]
@@ -364,6 +425,7 @@ export interface AppData {
    */
   deletedTimeCategories: Record<string, number>
   deletedContentKinds: Record<string, number>
+  deletedThoughts: Record<string, number>
   /** 사용자가 직접 만든 콘텐츠 유형 (팟캐스트, 전시 …) */
   customContentKinds: ContentKindDef[]
   /** 알림 시각·운동 부위 같은 설정의 최종 수정 시각 */
