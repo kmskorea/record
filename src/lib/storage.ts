@@ -19,6 +19,7 @@ import type { TimeCategory } from './types'
 import {
   DEFAULT_NOTIFICATIONS,
   DRINK_UNITS,
+  RECOVERED_LABEL,
   TIME_COLORS,
   LEGACY_RUNNING_PART,
   RUNNING_PART,
@@ -184,9 +185,11 @@ export function recoverOrphanCategories(
     ...categories,
     ...orphans.map((id, i) => ({
       id,
-      label: `이름 없는 유형 ${i + 1}`,
+      label: `${RECOVERED_LABEL} ${i + 1}`,
       colorIndex: (categories.length + i) % TIME_COLORS.length,
+      // 0은 '언제나 진짜에게 진다'는 뜻이고, recovered는 '올리지 않는다'는 뜻이다.
       updatedAt: 0,
+      recovered: true as const,
     })),
   ]
 }

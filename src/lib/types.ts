@@ -345,12 +345,26 @@ export const SNS_APPS = [
 export type SnsAppId = (typeof SNS_APPS)[number]['id']
 
 /** 하루를 어디에 썼는지 나누는 칸. 사용자가 직접 만든다. */
+/**
+ * 되살린 자리에 붙는 이름. 이 이름으로 올라온 줄은 어느 기기가 잘못 올린
+ * 것이므로(이제는 올리지 않지만 예전에 올라간 것이 서버에 남아 있다)
+ * 이름을 가진 유형을 덮지 못하게 막는 데도 쓴다.
+ */
+export const RECOVERED_LABEL = '이름 없는 유형'
+
 export interface TimeCategory {
   id: string
   label: string
   colorIndex: number
   /** 기기 간 최신본 판정 기준 */
   updatedAt: number
+  /**
+   * 시간표 칸에 남은 id로 자리만 되살린 것. 이름은 아직 모른다.
+   *
+   * 절대 서버로 올리지 않는다. 올리면 다른 기기가 가진 진짜 이름을 덮는다 —
+   * 실제로 그렇게 이름이 두 번 날아갔다.
+   */
+  recovered?: boolean
 }
 
 export const TIME_COLORS = [
