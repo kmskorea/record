@@ -1,6 +1,6 @@
-import type { DayRecord, ISODate, Running } from './types'
+import type { DayRecord, ISODate, Routine, Running } from './types'
 import { SNS_APPS } from './types'
-import { weekday } from './date'
+import { toKey, weekday } from './date'
 
 export type MetricId =
   | 'score'
@@ -355,6 +355,7 @@ export function hasContent(day: DayRecord | undefined): boolean {
     day.scoreNote.trim() !== '' ||
     day.events.length > 0 ||
     day.timeSlots.some((v) => v !== null) ||
+    Object.keys(day.routineDone).length > 0 ||
     day.condition.energy !== null ||
     day.condition.anxiety !== null ||
     day.condition.reason.trim() !== '' ||
@@ -375,11 +376,22 @@ export function hasContent(day: DayRecord | undefined): boolean {
  * 할일 완수율. 트래킹 그래프에서는 뺐지만 인사이트에서는 쓴다.
  * 화면에서 할 일과 일정이 한 목록으로 합쳐졌으므로 여기서도 같이 센다.
  */
-export function todoRate(day: DayRecord | undefined): number | null {
+/**
+ * 그날 완수율. 루틴은 날짜에 매달리지 않으므로 목록을 같이 받아,
+ * 그날 화면에 실제로 서 있던 것(만든 날 이후)만 센다.
+ */
+export function todoRate(
+  day: DayRecord | undefined,
+  routines: Routine[] = [],
+): number | null {
   if (!day) return null
-  const total = day.todos.length + day.events.length
+  const standing = routines.filter((r) => toKey(new Date(r.createdAt)) <= day.date)
+  const total = day.todos.length + day.events.length + standing.length
   if (total === 0) return null
-  const done = day.todos.filter((t) => t.done).length + day.events.filter((e) => e.done).length
+  const done =
+    day.todos.filter((t) => t.done).length +
+    day.events.filter((e) => e.done).length +
+    standing.filter((r) => day.routineDone[r.id] === true).length
   return (done / total) * 100
 }
 

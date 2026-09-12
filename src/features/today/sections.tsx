@@ -10,11 +10,12 @@ import {
   initial,
 } from '../../components/ui'
 import { StarRating } from '../../components/StarRating'
-import { GripIcon, PlusIcon, TrashIcon } from '../../components/icons'
+import { ArrowRightIcon, GripIcon, PlusIcon, TrashIcon } from '../../components/icons'
 import { useDragOrder } from '../../components/useDragOrder'
 import { useStore } from '../../lib/store'
 import { formatDuration, formatMinutes, formatPace, runSeconds, snsTotal } from '../../lib/metrics'
 import { newId } from '../../lib/storage'
+import { addDays, toKey } from '../../lib/date'
 import {
   ALCOHOL_KINDS,
   BUILTIN_CONTENT_KINDS,
@@ -32,6 +33,7 @@ import {
   WORKOUT_PARTS,
   isRunning,
   type ContentField,
+  type DayRecord,
   type Drink,
   type EventKind,
   type ISODate,
@@ -43,14 +45,22 @@ interface SectionProps {
   date: ISODate
 }
 
+/** 자세히 적을 때 고를 거리. 'task'(할일)는 그냥 적기와 겹쳐서 뺐다. */
+type AddKind = EventKind | 'routine'
+
+/** 루틴 꼬리표 색. 옛 '할일' 꼬리표(초록)와 섞이지 않게 따로 둔다. */
+const ROUTINE_COLOR = '#4F7CAC'
+
 // ── 할일 ─────────────────────────────────────────────────────────────────────
 
 export function TodoSection({ date, onOpenPerson }: SectionProps & { onOpenPerson?: (id: string) => void }) {
-  const { getDay, updateDay, data } = useStore()
+  const { getDay, updateDay, data, addRoutine, deleteRoutine } = useStore()
   const day = getDay(date)
   const [draft, setDraft] = useState('')
   const [detail, setDetail] = useState(false)
-  const [kind, setKind] = useState<EventKind>('appointment')
+  // '할일'은 그냥 적기와 겹쳐서 고를 거리에서 뺐다. 대신 루틴을 넣는다.
+  // 예전에 '할일'로 등록해둔 일정은 그대로 읽히고 그대로 보인다.
+  const [kind, setKind] = useState<AddKind>('appointment')
   const [time, setTime] = useState('')
   const [people, setPeople] = useState<string[]>([])
 
@@ -73,14 +83,17 @@ export function TodoSection({ date, onOpenPerson }: SectionProps & { onOpenPerso
   const add = () => {
     const text = draft.trim()
     if (!text) return
-    if (detail) {
+    if (detail && kind === 'routine') {
+      addRoutine(text, time || null)
+      resetForm()
+    } else if (detail) {
       updateDay(date, (d) => ({
         events: [
           ...d.events,
           {
             id: newId(),
             title: text,
-            kind,
+            kind: kind as EventKind,
             time: time || null,
             personIds: kind === 'appointment' ? people : [],
             done: false,
@@ -114,7 +127,14 @@ export function TodoSection({ date, onOpenPerson }: SectionProps & { onOpenPerso
       order: number
       toggle: (v: boolean) => void
       remove: () => void
+      /** 오늘 못 한 것을 내일로 옮긴다 */
+      defer: () => void
     }
+
+    /** 옮겨 갈 날의 맨 끝 자리. 미룬 것은 그 날 목록 뒤에 붙는다. */
+    const tailOrder = (d: DayRecord) =>
+      Math.max(-1, ...d.todos.map((t) => t.order), ...d.events.map((e) => e.order)) + 1
+    const tomorrow = addDays(date, 1)
     const list: Row[] = [
       ...day.events.map((ev) => ({
         key: `e-${ev.id}`,
@@ -131,6 +151,13 @@ export function TodoSection({ date, onOpenPerson }: SectionProps & { onOpenPerso
           })),
         remove: () =>
           updateDay(date, (d) => ({ events: d.events.filter((x) => x.id !== ev.id) })),
+        defer: () => {
+          // 미룬 것은 아직 안 한 것이다. 체크는 풀어서 보낸다.
+          updateDay(tomorrow, (d) => ({
+            events: [...d.events, { ...ev, done: false, order: tailOrder(d) }],
+          }))
+          updateDay(date, (d) => ({ events: d.events.filter((x) => x.id !== ev.id) }))
+        },
       })),
       ...day.todos.map((t) => ({
         key: `t-${t.id}`,
@@ -146,11 +173,39 @@ export function TodoSection({ date, onOpenPerson }: SectionProps & { onOpenPerso
             todos: d.todos.map((x) => (x.id === t.id ? { ...x, done: v } : x)),
           })),
         remove: () => updateDay(date, (d) => ({ todos: d.todos.filter((x) => x.id !== t.id) })),
+        defer: () => {
+          updateDay(tomorrow, (d) => ({
+            todos: [...d.todos, { ...t, done: false, order: tailOrder(d) }],
+          }))
+          updateDay(date, (d) => ({ todos: d.todos.filter((x) => x.id !== t.id) }))
+        },
       })),
     ]
     // 사용자가 정해둔 자리 순. 같으면 만든 순으로 갈린다.
     return list.sort((a, b) => a.order - b.order || a.createdAt - b.createdAt)
   }, [day.events, day.todos, date, updateDay])
+
+  /**
+   * 루틴은 그날 등록한 것이 아니라 매일 서 있는 것이라, 끌어 옮기는 목록과
+   * 섞지 않고 맨 위에 고정한다. 만든 날부터 보이게 해서 지난 기록을
+   * 거슬러 채우지 않는다.
+   */
+  const routineRows = useMemo(() => {
+    return data.routines
+      .filter((r) => toKey(new Date(r.createdAt)) <= date)
+      .sort((a, b) => (a.time ?? '99:99').localeCompare(b.time ?? '99:99') || a.createdAt - b.createdAt)
+      .map((r) => ({
+        routine: r,
+        done: day.routineDone[r.id] === true,
+        toggle: (v: boolean) =>
+          updateDay(date, (d) => {
+            const next = { ...d.routineDone }
+            if (v) next[r.id] = true
+            else delete next[r.id]
+            return { routineDone: next }
+          }),
+      }))
+  }, [data.routines, date, day.routineDone, updateDay])
 
   /** 끌어서 옮긴 결과를 자리 번호로 굳힌다. */
   const commitOrder = (keys: string[]) => {
@@ -173,24 +228,59 @@ export function TodoSection({ date, onOpenPerson }: SectionProps & { onOpenPerso
     return order.map((k) => byKey.get(k)!).filter(Boolean)
   }, [order, rows])
 
-  const done = rows.filter((r) => r.done).length
+  const doneCount = rows.filter((r) => r.done).length + routineRows.filter((r) => r.done).length
+  const totalCount = rows.length + routineRows.length
 
   return (
     <Card
       title="오늘 할 일"
       mark="var(--accent)"
       action={
-        rows.length > 0 ? (
+        totalCount > 0 ? (
           <span className="todo-progress">
-            <span className="big">{done}</span>
-            <span className="small">/ {rows.length}</span>
+            <span className="big">{doneCount}</span>
+            <span className="small">/ {totalCount}</span>
           </span>
         ) : null
       }
     >
-      {rows.length === 0 ? (
+      {routineRows.length > 0 && (
+        <ul className="routine-list">
+          {routineRows.map(({ routine, done, toggle }) => (
+            <li key={routine.id} className="todo" data-done={done}>
+              {/* 루틴은 끌어 옮기지 않지만, 체크칸이 아래 목록과 어긋나면 눈에 걸린다 */}
+              <span className="todo-handle-gap" aria-hidden="true" />
+              <Checkbox checked={done} label={routine.title} onChange={toggle} />
+              <span className="todo-text">
+                <span className="todo-title">{routine.title}</span>
+                <span className="event-meta">
+                  <span className="event-kind" style={{ background: ROUTINE_COLOR }}>
+                    루틴
+                  </span>
+                  {routine.time && <span>{routine.time}</span>}
+                </span>
+              </span>
+              <button
+                type="button"
+                className="icon-btn plain"
+                aria-label={`${routine.title} 루틴 삭제`}
+                onClick={() => {
+                  // 루틴을 지우는 건 하루가 아니라 앞으로 전부에 대한 결정이다.
+                  if (confirm(`'${routine.title}' 루틴을 지울까요?\n\n앞으로 모든 날에서 사라집니다.`)) {
+                    deleteRoutine(routine.id)
+                  }
+                }}
+              >
+                <TrashIcon />
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+
+      {rows.length === 0 && routineRows.length === 0 ? (
         <Empty>할 일이나 약속, 마감을 적어보세요.</Empty>
-      ) : (
+      ) : rows.length === 0 ? null : (
         <ul
           ref={listRef}
           onPointerMove={(e) => move(e.clientY)}
@@ -236,6 +326,15 @@ export function TodoSection({ date, onOpenPerson }: SectionProps & { onOpenPerso
                   </span>
                 )}
               </span>
+              <button
+                type="button"
+                className="icon-btn plain"
+                aria-label={`${row.title} 내일로 미루기`}
+                title="내일로 미루기"
+                onClick={row.defer}
+              >
+                <ArrowRightIcon />
+              </button>
               <button type="button" className="icon-btn plain" aria-label="삭제" onClick={row.remove}>
                 <TrashIcon />
               </button>
@@ -262,7 +361,7 @@ export function TodoSection({ date, onOpenPerson }: SectionProps & { onOpenPerso
       {detail && (
         <div className="stack" style={{ marginTop: 10 }}>
           <div className="seg">
-            {(['appointment', 'deadline', 'task'] as EventKind[]).map((k) => (
+            {(['appointment', 'deadline', 'routine'] as AddKind[]).map((k) => (
               <button
                 key={k}
                 type="button"
@@ -270,7 +369,7 @@ export function TodoSection({ date, onOpenPerson }: SectionProps & { onOpenPerso
                 aria-pressed={kind === k}
                 onClick={() => setKind(k)}
               >
-                {EVENT_KIND_LABEL[k]}
+                {k === 'routine' ? '루틴' : EVENT_KIND_LABEL[k]}
               </button>
             ))}
           </div>
@@ -284,6 +383,12 @@ export function TodoSection({ date, onOpenPerson }: SectionProps & { onOpenPerso
               onChange={(e) => setTime(e.target.value)}
             />
           </label>
+
+          {kind === 'routine' && (
+            <p className="card-note">
+              루틴은 매일 이 자리에 섭니다. 직접 지울 때까지 사라지지 않습니다.
+            </p>
+          )}
 
           {kind === 'appointment' && data.people.length > 0 && (
             <div className="field">
@@ -326,7 +431,7 @@ export function TodoSection({ date, onOpenPerson }: SectionProps & { onOpenPerso
         style={{ marginTop: 10 }}
         onClick={() => (detail ? resetForm() : setDetail(true))}
       >
-        {detail ? '간단히 적기' : '+ 약속·마감으로 추가'}
+        {detail ? '간단히 적기' : '+ 약속·마감·루틴으로 추가'}
       </button>
     </Card>
   )

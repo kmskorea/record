@@ -15,7 +15,13 @@ import {
   todoRate,
   weekdayAverages,
 } from '../../lib/metrics'
-import { PROFILE_COLORS, type DayRecord, type ISODate, type TimeCategory } from '../../lib/types'
+import {
+  PROFILE_COLORS,
+  type DayRecord,
+  type ISODate,
+  type Routine,
+  type TimeCategory,
+} from '../../lib/types'
 import { TimeScoreWidget, TimeShareWidget, UpcomingWidget } from './TimeInsights'
 
 const WINDOW = 30
@@ -34,6 +40,7 @@ export function InsightsPanel({
   days,
   people,
   timeCategories,
+  routines,
   onOpenPerson,
   onOpenDate,
 }: {
@@ -41,6 +48,7 @@ export function InsightsPanel({
   days: Record<ISODate, DayRecord>
   people: { id: string; name: string; relation: string; colorIndex: number }[]
   timeCategories: TimeCategory[]
+  routines: Routine[]
   onOpenPerson: (id: string) => void
   onOpenDate: (date: ISODate) => void
 }) {
@@ -49,7 +57,7 @@ export function InsightsPanel({
   const stats = useMemo(() => {
     const energySeries = buildSeries(METRIC_BY_ID.energy, dates, days)
     const sleepSeries = buildSeries(METRIC_BY_ID.sleep, dates, days)
-    const todoValues = dates.map((d) => todoRate(days[d]))
+    const todoValues = dates.map((d) => todoRate(days[d], routines))
     const scoreValues = dates.map((d) => dayScore(days[d]))
 
     const dist = { good: 0, ok: 0, bad: 0 }
@@ -74,7 +82,7 @@ export function InsightsPanel({
       dist,
       weekday: weekdayAverages(energySeries),
     }
-  }, [dates, days, today])
+  }, [dates, days, today, routines])
 
   const discoveries = useMemo(() => findDiscoveries(dates, days), [dates, days])
 

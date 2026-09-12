@@ -7,6 +7,7 @@ import type {
   ISODate,
   NotificationSettings,
   Person,
+  Routine,
   Thought,
   TimeCategory,
 } from './types'
@@ -37,6 +38,7 @@ export function pendingCount(state: SyncState): number {
     Object.keys(state.dirtyTimeCategories).length +
     Object.keys(state.dirtyContentKinds).length +
     Object.keys(state.dirtyThoughts).length +
+    Object.keys(state.dirtyRoutines).length +
     (state.settingsDirty ? 1 : 0)
   )
 }
@@ -78,6 +80,7 @@ export const CONTENT_KIND = 'content'
 export const TIME_CATEGORY_KIND = 'timeCategory'
 export const CONTENT_KIND_KIND = 'contentKind'
 export const THOUGHT_KIND = 'thought'
+export const ROUTINE_KIND = 'routine'
 
 interface ObjectRow {
   kind: string
@@ -241,18 +244,21 @@ export async function syncOnce(
   const dirtyTimeCategories = Object.keys(state.dirtyTimeCategories)
   const dirtyContentKinds = Object.keys(state.dirtyContentKinds)
   const dirtyThoughts = Object.keys(state.dirtyThoughts)
+  const dirtyRoutines = Object.keys(state.dirtyRoutines)
   const pending =
     dirtyPeople.length +
     dirtyContent.length +
     dirtyTimeCategories.length +
     dirtyContentKinds.length +
-    dirtyThoughts.length
+    dirtyThoughts.length +
+    dirtyRoutines.length
   if (pending > 0) {
     const peopleById = new Map(next.people.map((p) => [p.id, p]))
     const contentById = new Map(next.content.map((c) => [c.id, c]))
     const catsById = new Map(next.timeCategories.map((c) => [c.id, c]))
     const kindsById = new Map(next.customContentKinds.map((k) => [k.id, k]))
     const thoughtsById = new Map(next.thoughts.map((t) => [t.id, t]))
+    const routinesById = new Map(next.routines.map((r) => [r.id, r]))
     const rows = [
       ...dirtyPeople.map((id) => outgoing(PERSON_KIND, id, peopleById, next.deletedPeople)),
       ...dirtyContent.map((id) => outgoing(CONTENT_KIND, id, contentById, next.deletedContent)),
@@ -264,6 +270,9 @@ export async function syncOnce(
       ),
       ...dirtyThoughts.map((id) =>
         outgoing(THOUGHT_KIND, id, thoughtsById, next.deletedThoughts),
+      ),
+      ...dirtyRoutines.map((id) =>
+        outgoing(ROUTINE_KIND, id, routinesById, next.deletedRoutines),
       ),
     ]
     const { error } = await client.rpc('merge_objects', { rows })
@@ -277,6 +286,7 @@ export async function syncOnce(
       nextState.dirtyTimeCategories = {}
       nextState.dirtyContentKinds = {}
       nextState.dirtyThoughts = {}
+      nextState.dirtyRoutines = {}
     }
   }
 
@@ -363,6 +373,12 @@ export async function syncOnce(
     incoming[THOUGHT_KIND] ?? [],
     nextState.dirtyThoughts,
   )
+  const mergedRoutines = mergeIncoming<Routine>(
+    next.routines,
+    next.deletedRoutines,
+    incoming[ROUTINE_KIND] ?? [],
+    nextState.dirtyRoutines,
+  )
   const people = mergedPeople.items
   const deletedPeople = mergedPeople.tombstones
   const content = mergedContent.items
@@ -377,6 +393,8 @@ export async function syncOnce(
   // 새로 받아온 날에 옛 아이디어가 있으면 바로 문장으로 옮긴다. id를 물려받아
   // 어느 기기에서 돌려도 같은 결과가 나오므로 따로 올릴 필요가 없다.
   const thoughts = migrateIdeas(days, mergedThoughts.items, deletedThoughts)
+  const routines = mergedRoutines.items
+  const deletedRoutines = mergedRoutines.tombstones
   changed =
     changed ||
     mergedPeople.changed ||
@@ -384,6 +402,7 @@ export async function syncOnce(
     mergedCats.changed ||
     mergedKinds.changed ||
     mergedThoughts.changed ||
+    mergedRoutines.changed ||
     thoughts.length !== next.thoughts.length
 
   let notifications = next.notifications
@@ -416,11 +435,13 @@ export async function syncOnce(
     people,
     content,
     thoughts,
+    routines,
     deletedPeople,
     deletedContent,
     deletedTimeCategories,
     deletedContentKinds,
     deletedThoughts,
+    deletedRoutines,
     notifications,
     customWorkoutParts,
     timeCategories,
@@ -454,6 +475,9 @@ export function markEverythingDirty(data: AppData, state: SyncState): SyncState 
   const dirtyThoughts: Record<string, true> = { ...state.dirtyThoughts }
   for (const t of data.thoughts) dirtyThoughts[t.id] = true
   for (const id of Object.keys(data.deletedThoughts)) dirtyThoughts[id] = true
+  const dirtyRoutines: Record<string, true> = { ...state.dirtyRoutines }
+  for (const r of data.routines) dirtyRoutines[r.id] = true
+  for (const id of Object.keys(data.deletedRoutines)) dirtyRoutines[id] = true
   return {
     ...state,
     dirtyDays,
@@ -462,6 +486,7 @@ export function markEverythingDirty(data: AppData, state: SyncState): SyncState 
     dirtyTimeCategories,
     dirtyContentKinds,
     dirtyThoughts,
+    dirtyRoutines,
     settingsDirty: true,
   }
 }
