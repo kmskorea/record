@@ -5,7 +5,6 @@ import {
   BodySection,
   ContentSection,
   DietSection,
-  IdeaSection,
   InnerStateSection,
   PeopleSection,
   ReflectionSection,
@@ -85,7 +84,6 @@ export function DayDetailSheet({
           <TodoSection date={date} onOpenPerson={onOpenPerson} />
           <SleepSection date={date} />
           <InnerStateSection date={date} />
-          <IdeaSection date={date} />
           <WorkoutSection date={date} />
           <BodySection date={date} />
           <DietSection date={date} />

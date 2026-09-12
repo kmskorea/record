@@ -9,6 +9,8 @@ import type {
   InnerState,
   Level,
   Person,
+  Thought,
+  ThoughtLevel,
   Todo,
   Workout,
 } from './types'
@@ -35,6 +37,7 @@ export function emptyData(): AppData {
     days: {},
     people: [],
     content: [],
+    thoughts: [],
     notifications: { ...DEFAULT_NOTIFICATIONS, lastFired: {} },
     customWorkoutParts: [],
     timeCategories: [],
@@ -42,6 +45,7 @@ export function emptyData(): AppData {
     deletedContent: {},
     deletedTimeCategories: {},
     deletedContentKinds: {},
+    deletedThoughts: {},
     customContentKinds: [],
     settingsUpdatedAt: 0,
   }
@@ -93,6 +97,56 @@ function normalizeInnerState(raw: unknown, base: InnerState): InnerState {
  *
  * 일부러 지운 유형은 칸도 같이 비우므로(deleteTimeCategory) 되살아나지 않는다.
  */
+const LEVELS: ThoughtLevel[] = ['sentence', 'paragraph', 'essay']
+
+function normalizeThought(raw: unknown): Thought | null {
+  if (!raw || typeof raw !== 'object') return null
+  const t = raw as Partial<Thought>
+  if (!t.id || typeof t.id !== 'string') return null
+  const at = typeof t.createdAt === 'number' ? t.createdAt : Date.now()
+  return {
+    id: t.id,
+    level: LEVELS.includes(t.level as ThoughtLevel) ? (t.level as ThoughtLevel) : 'sentence',
+    title: typeof t.title === 'string' ? t.title : '',
+    text: typeof t.text === 'string' ? t.text : '',
+    parentId: typeof t.parentId === 'string' ? t.parentId : null,
+    createdAt: at,
+    updatedAt: typeof t.updatedAt === 'number' ? t.updatedAt : at,
+  }
+}
+
+/**
+ * '오늘 > 아이디어'에 적어둔 것을 반추의 문장으로 옮긴다.
+ *
+ * 아이디어의 id를 그대로 물려받는다. 그래서 이 함수가 몇 번 지나가도
+ * 중복이 생기지 않고, 하루 기록은 그대로 두어도 된다(지우면 다른 기기가
+ * 다시 만들어 낸다). 반추에서 지운 것은 묘비가 막아 되살아나지 않는다.
+ */
+export function migrateIdeas(
+  days: Record<ISODate, DayRecord>,
+  thoughts: Thought[],
+  tombstones: Record<string, number>,
+): Thought[] {
+  const known = new Set(thoughts.map((t) => t.id))
+  const moved: Thought[] = []
+  for (const day of Object.values(days)) {
+    for (const idea of day.ideas) {
+      if (!idea?.id || known.has(idea.id) || tombstones[idea.id]) continue
+      known.add(idea.id)
+      moved.push({
+        id: idea.id,
+        level: 'sentence',
+        title: '',
+        text: typeof idea.text === 'string' ? idea.text : '',
+        parentId: null,
+        createdAt: typeof idea.at === 'number' ? idea.at : 0,
+        updatedAt: typeof idea.at === 'number' ? idea.at : 0,
+      })
+    }
+  }
+  return moved.length === 0 ? thoughts : [...thoughts, ...moved]
+}
+
 export function recoverOrphanCategories(
   days: Record<ISODate, DayRecord>,
   categories: TimeCategory[],
@@ -327,11 +381,21 @@ export function migrate(input: unknown): AppData {
     .map(normalizeContentItem)
     .filter((b): b is ContentItem => b !== null)
 
+  const deletedThoughts = pickTombstones(raw.deletedThoughts)
+  const thoughts = migrateIdeas(
+    days,
+    Array.isArray(raw.thoughts)
+      ? raw.thoughts.map(normalizeThought).filter((t): t is Thought => t !== null)
+      : [],
+    deletedThoughts,
+  )
+
   return {
     version: VERSION,
     days,
     people,
     content,
+    thoughts,
     notifications: { ...base.notifications, ...(raw.notifications ?? {}) },
     // 예전에 직접 추가해둔 이름이 기본 부위가 되는 일이 있다('러닝'). 칩이 두 번
     // 나오지 않게 기본 목록과 겹치는 건 여기서 걷어낸다.
@@ -356,6 +420,7 @@ export function migrate(input: unknown): AppData {
     deletedContent: pickTombstones(raw.deletedContent ?? (raw as { deletedBooks?: unknown }).deletedBooks),
     deletedTimeCategories: pickTombstones(raw.deletedTimeCategories),
     deletedContentKinds: pickTombstones(raw.deletedContentKinds),
+    deletedThoughts,
     customContentKinds: Array.isArray(raw.customContentKinds)
       ? raw.customContentKinds
           .filter((k) => k && typeof k.id === 'string' && typeof k.label === 'string')
@@ -390,6 +455,7 @@ export interface SyncState {
   dirtyPeople: Record<string, true>
   dirtyContent: Record<string, true>
   dirtyTimeCategories: Record<string, true>
+  dirtyThoughts: Record<string, true>
   dirtyContentKinds: Record<string, true>
   settingsDirty: boolean
   /** 증분 조회 커서 (서버 시각) */
@@ -403,6 +469,7 @@ export function emptySyncState(): SyncState {
     dirtyPeople: {},
     dirtyContent: {},
     dirtyTimeCategories: {},
+    dirtyThoughts: {},
     dirtyContentKinds: {},
     settingsDirty: false,
     cursor: null,

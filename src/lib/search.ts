@@ -1,8 +1,8 @@
-import type { ContentItem, ContentLog, DayRecord, ISODate, Person } from './types'
+import type { ContentItem, ContentLog, DayRecord, ISODate, Person, Thought } from './types'
+import { THOUGHT_LEVEL } from './types'
 
 export type HitKind =
   | '할일'
-  | '아이디어'
   | '내면 상태'
   | '운동'
   | '식사'
@@ -10,6 +10,10 @@ export type HitKind =
   | '콘텐츠'
   | '일기'
   | '한 줄 평'
+  // 반추의 세 단계
+  | '문장'
+  | '단락'
+  | '글'
 
 export interface SearchHit {
   id: string
@@ -20,6 +24,8 @@ export interface SearchHit {
   personId?: string
   /** 콘텐츠 기록이면 어떤 작품인지 */
   itemId?: string
+  /** 반추 기록이면 어떤 생각인지 */
+  thoughtId?: string
 }
 
 function matches(text: string, query: string): boolean {
@@ -31,6 +37,7 @@ export function searchAll(
   days: Record<ISODate, DayRecord>,
   people: Person[],
   content: ContentItem[],
+  thoughts: Thought[],
   rawQuery: string,
 ): SearchHit[] {
   const query = rawQuery.trim().toLowerCase()
@@ -46,7 +53,6 @@ export function searchAll(
     }
 
     for (const todo of day.todos) push('할일', todo.text, `${day.date}-todo-${todo.id}`)
-    for (const idea of day.ideas) push('아이디어', idea.text, `${day.date}-idea-${idea.id}`)
     if (day.condition.reason) push('내면 상태', day.condition.reason, `${day.date}-condition`)
     if (day.workout.memo) push('운동', day.workout.memo, `${day.date}-workout`)
     for (const meal of day.diet.meals) push('식사', meal.label, `${day.date}-meal-${meal.id}`)
@@ -92,7 +98,33 @@ export function searchAll(
     if (day.scoreNote) push('한 줄 평', day.scoreNote, `${day.date}-scorenote`)
   }
 
+  // 반추는 날짜에 매달리지 않는다. 적은 날로 자리를 잡아 같이 세운다.
+  for (const t of thoughts) {
+    const body = [t.title, t.text].filter(Boolean).join(' ')
+    if (!body || !matches(body, query)) continue
+    hits.push({
+      id: `thought-${t.id}`,
+      date: toKey(t.createdAt),
+      kind: THOUGHT_LEVEL[t.level].label as HitKind,
+      text: t.text || t.title,
+      thoughtId: t.id,
+    })
+  }
+
   return hits.sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0))
+}
+
+/** epoch ms를 'YYYY-MM-DD'로. 검색 결과를 날짜순으로 세우기 위한 것. */
+function toKey(at: number): ISODate {
+  const d = new Date(at)
+  const p = (n: number) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`
+}
+
+export function searchThoughts(thoughts: Thought[], rawQuery: string): Thought[] {
+  const query = rawQuery.trim().toLowerCase()
+  if (!query) return []
+  return thoughts.filter((t) => matches(`${t.title} ${t.text}`, query))
 }
 
 export function searchPeople(people: Person[], rawQuery: string): Person[] {

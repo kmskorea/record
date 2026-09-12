@@ -2,19 +2,21 @@ import { useState } from 'react'
 import { CalendarScreen } from './features/calendar/CalendarScreen'
 import { TodayScreen } from './features/today/TodayScreen'
 import { SearchScreen } from './features/search/SearchScreen'
+import { ReflectScreen } from './features/reflect/ReflectScreen'
 import { PersonSheet } from './features/search/PersonSheet'
 import { ContentSheet } from './features/search/ContentSheet'
 import { DayDetailSheet } from './features/calendar/DayDetailSheet'
-import { CalendarIcon, SearchIcon, TodayIcon } from './components/icons'
+import { CalendarIcon, ReflectIcon, SearchIcon, TodayIcon } from './components/icons'
 import { useStore } from './lib/store'
 import { useNotificationScheduler } from './lib/notifications'
 import type { ISODate } from './lib/types'
 
-type Tab = 'flow' | 'today' | 'search'
+type Tab = 'flow' | 'today' | 'reflect' | 'search'
 
 const TABS: { id: Tab; label: string; Icon: (p: { className?: string }) => JSX.Element }[] = [
   { id: 'flow', label: '흐름', Icon: CalendarIcon },
   { id: 'today', label: '오늘', Icon: TodayIcon },
+  { id: 'reflect', label: '반추', Icon: ReflectIcon },
   { id: 'search', label: '검색', Icon: SearchIcon },
 ]
 
@@ -31,6 +33,7 @@ export function App() {
     <div className="app">
       {tab === 'flow' && <CalendarScreen onOpenPerson={setPersonId} onOpenContent={setContentId} />}
       {tab === 'today' && <TodayScreen onOpenPerson={setPersonId} onOpenContent={setContentId} />}
+      {tab === 'reflect' && <ReflectScreen />}
       {tab === 'search' && (
         <SearchScreen
           onOpenPerson={setPersonId}

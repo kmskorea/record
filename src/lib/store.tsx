@@ -17,9 +17,18 @@ import type {
   ISODate,
   NotificationSettings,
   Person,
+  Thought,
+  ThoughtLevel,
   TimeCategory,
 } from './types'
-import { BUILTIN_CONTENT_KINDS, CONTENT_COLORS, emptyDay, PROFILE_COLORS, TIME_COLORS } from './types'
+import {
+  BUILTIN_CONTENT_KINDS,
+  CONTENT_COLORS,
+  emptyDay,
+  PROFILE_COLORS,
+  THOUGHT_LEVEL,
+  TIME_COLORS,
+} from './types'
 import {
   flush,
   load,
@@ -46,6 +55,14 @@ interface StoreValue {
   updateContent: (id: string, patch: Partial<Omit<ContentItem, 'id'>>) => void
   deleteContent: (id: string) => void
   addContentKind: (label: string, fields: ContentKindDef['fields']) => ContentKindDef | null
+
+  // 반추
+  addThought: (text: string) => Thought | null
+  updateThought: (id: string, patch: Partial<Omit<Thought, 'id'>>) => void
+  deleteThought: (id: string) => void
+  /** 고른 것들을 한 단계 위로 묶는다. 묶인 것은 재료로 그대로 남는다 */
+  groupThoughts: (ids: string[], title: string) => Thought | null
+  setThoughtParent: (id: string, parentId: string | null) => void
   setNotifications: (patch: Partial<NotificationSettings>) => void
   markNotificationFired: (slot: string, date: ISODate) => void
   addCustomWorkoutPart: (part: string) => void
@@ -416,6 +433,126 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     [commit],
   )
 
+  // ── 반추 ──────────────────────────────────────────────────────────────────
+
+  const touchThoughts = useCallback(
+    (next: Thought[], ids: string[], extra?: (s: SyncState) => SyncState) => {
+      const nextData: AppData = { ...dataRef.current, thoughts: next }
+      dataRef.current = nextData
+      commit(nextData, (s) => {
+        const dirtyThoughts = { ...s.dirtyThoughts }
+        for (const id of ids) dirtyThoughts[id] = true
+        return extra ? extra({ ...s, dirtyThoughts }) : { ...s, dirtyThoughts }
+      })
+    },
+    [commit],
+  )
+
+  const addThought = useCallback<StoreValue['addThought']>(
+    (text) => {
+      const clean = text.trim()
+      if (!clean) return null
+      const now = Date.now()
+      const thought: Thought = {
+        id: newId(),
+        level: 'sentence',
+        title: '',
+        text: clean,
+        parentId: null,
+        createdAt: now,
+        updatedAt: now,
+      }
+      touchThoughts([...dataRef.current.thoughts, thought], [thought.id])
+      return thought
+    },
+    [touchThoughts],
+  )
+
+  const updateThought = useCallback<StoreValue['updateThought']>(
+    (id, patch) => {
+      touchThoughts(
+        dataRef.current.thoughts.map((t) =>
+          t.id === id ? { ...t, ...patch, updatedAt: Date.now() } : t,
+        ),
+        [id],
+      )
+    },
+    [touchThoughts],
+  )
+
+  const deleteThought = useCallback<StoreValue['deleteThought']>(
+    (id) => {
+      const now = Date.now()
+      // 단락을 지워도 재료가 된 문장은 남긴다. 다듬은 결과가 아니라
+      // 원래 생각이 아까운 것이다. 묶임만 풀어 위로 올려 둔다.
+      const freed: string[] = []
+      const next = dataRef.current.thoughts
+        .filter((t) => t.id !== id)
+        .map((t) => {
+          if (t.parentId !== id) return t
+          freed.push(t.id)
+          return { ...t, parentId: null, updatedAt: now }
+        })
+      const nextData: AppData = {
+        ...dataRef.current,
+        thoughts: next,
+        deletedThoughts: { ...dataRef.current.deletedThoughts, [id]: now },
+      }
+      dataRef.current = nextData
+      commit(nextData, (s) => {
+        const dirtyThoughts = { ...s.dirtyThoughts, [id]: true as const }
+        for (const child of freed) dirtyThoughts[child] = true
+        return { ...s, dirtyThoughts }
+      })
+    },
+    [commit],
+  )
+
+  const groupThoughts = useCallback<StoreValue['groupThoughts']>(
+    (ids, title) => {
+      const picked = dataRef.current.thoughts.filter((t) => ids.includes(t.id))
+      if (picked.length === 0) return null
+      // 같은 단계끼리만 묶는다. 문장과 단락을 섞으면 어느 단계로 올릴지
+      // 정할 수 없다.
+      const level = picked[0].level
+      if (picked.some((t) => t.level !== level)) return null
+      const up = THOUGHT_LEVEL[level].up
+      if (!up) return null
+
+      const now = Date.now()
+      const parent: Thought = {
+        id: newId(),
+        level: up as ThoughtLevel,
+        title: title.trim(),
+        text: '',
+        parentId: null,
+        createdAt: now,
+        updatedAt: now,
+      }
+      const next = [
+        ...dataRef.current.thoughts.map((t) =>
+          ids.includes(t.id) ? { ...t, parentId: parent.id, updatedAt: now } : t,
+        ),
+        parent,
+      ]
+      touchThoughts(next, [parent.id, ...ids])
+      return parent
+    },
+    [touchThoughts],
+  )
+
+  const setThoughtParent = useCallback<StoreValue['setThoughtParent']>(
+    (id, parentId) => {
+      touchThoughts(
+        dataRef.current.thoughts.map((t) =>
+          t.id === id ? { ...t, parentId, updatedAt: Date.now() } : t,
+        ),
+        [id],
+      )
+    },
+    [touchThoughts],
+  )
+
   const setNotifications = useCallback<StoreValue['setNotifications']>(
     (patch) => {
       const nextData: AppData = {
@@ -606,6 +743,11 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       updateContent,
       deleteContent,
       addContentKind,
+      addThought,
+      updateThought,
+      deleteThought,
+      groupThoughts,
+      setThoughtParent,
       setNotifications,
       markNotificationFired,
       addCustomWorkoutPart,
@@ -634,6 +776,11 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       updateContent,
       deleteContent,
       addContentKind,
+      addThought,
+      updateThought,
+      deleteThought,
+      groupThoughts,
+      setThoughtParent,
       setNotifications,
       markNotificationFired,
       addCustomWorkoutPart,

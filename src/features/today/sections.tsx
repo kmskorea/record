@@ -10,12 +10,11 @@ import {
   initial,
 } from '../../components/ui'
 import { StarRating } from '../../components/StarRating'
-import { BulbIcon, GripIcon, PlusIcon, TrashIcon } from '../../components/icons'
+import { GripIcon, PlusIcon, TrashIcon } from '../../components/icons'
 import { useDragOrder } from '../../components/useDragOrder'
 import { useStore } from '../../lib/store'
 import { formatDuration, formatMinutes, formatPace, runSeconds, snsTotal } from '../../lib/metrics'
 import { newId } from '../../lib/storage'
-import { formatTime } from '../../lib/date'
 import {
   ALCOHOL_KINDS,
   BUILTIN_CONTENT_KINDS,
@@ -523,66 +522,6 @@ export function InnerStateSection({ date }: SectionProps) {
         />
       </label>
     </CollapsibleCard>
-  )
-}
-
-// ── 아이디어 ─────────────────────────────────────────────────────────────────
-
-export function IdeaSection({ date }: SectionProps) {
-  const { getDay, updateDay } = useStore()
-  const day = getDay(date)
-  const [draft, setDraft] = useState('')
-
-  const add = () => {
-    const text = draft.trim()
-    if (!text) return
-    updateDay(date, (d) => ({ ideas: [{ id: newId(), text, at: Date.now() }, ...d.ideas] }))
-    setDraft('')
-  }
-
-  return (
-    <Card
-      title="아이디어"
-      mark="var(--yellow)"
-      note={day.ideas.length ? `${day.ideas.length}개` : '떠오를 때마다'}
-    >
-      <div className="input-row" style={{ marginBottom: day.ideas.length ? 12 : 0 }}>
-        <input
-          className="input"
-          placeholder="지금 떠오른 생각"
-          value={draft}
-          onChange={(e) => setDraft(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter') add()
-          }}
-        />
-        <button type="button" className="icon-btn" onClick={add} aria-label="아이디어 추가">
-          <PlusIcon />
-        </button>
-      </div>
-
-      <div className="stack">
-        {day.ideas.map((idea) => (
-          <div key={idea.id} className="note-item">
-            <BulbIcon className="idea-icon" />
-            <div className="body">
-              <p>{idea.text}</p>
-              <div className="time">{formatTime(idea.at)}</div>
-            </div>
-            <button
-              type="button"
-              className="icon-btn plain"
-              aria-label="삭제"
-              onClick={() =>
-                updateDay(date, (d) => ({ ideas: d.ideas.filter((i) => i.id !== idea.id) }))
-              }
-            >
-              <TrashIcon />
-            </button>
-          </div>
-        ))}
-      </div>
-    </Card>
   )
 }
 
