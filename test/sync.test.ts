@@ -820,5 +820,129 @@ function contentDay(date: string, itemId: string, quote: string, updatedAt: numb
   )
 }
 
+// ── 25. 되살린 껍데기가 진짜 이름을 덮지 않는다 ────────────────────────────
+//
+// 실제로 이름이 두 번 날아간 경로다. 되살린 자리는 updatedAt 0으로 '항상
+// 지도록' 만들어뒀는데, 올릴 때 0을 falsy로 보고 Date.now()를 붙여서
+// 오히려 제일 새것이 되었다. 게다가 앱을 열 때마다 전부 다시 올렸다.
+{
+  const painted = (date: string, id: string) => {
+    const d = emptyDay(date)
+    return { ...d, timeSlots: d.timeSlots.map((_, i) => (i < 6 ? id : null)), updatedAt: 1000 }
+  }
+  const store: Store = { days: [], objects: [], settings: null }
+
+  // 노트북: 이름이 '연구실'이다
+  const laptop = migrate({
+    timeCategories: [{ id: 'c1', label: '연구실', colorIndex: 0, updatedAt: 8000 }],
+    days: { '2026-09-10': painted('2026-09-10', 'c1') },
+  })
+  await syncOnce(fakeClient(store), laptop, markEverythingDirty(laptop, emptySyncState()))
+  check('노트북의 이름이 올라간다', row(store, 'timeCategory', 'c1')?.data.label === '연구실')
+  check(
+    '올린 시각을 만들어내지 않는다',
+    row(store, 'timeCategory', 'c1')?.updated_at === 8000,
+    String(row(store, 'timeCategory', 'c1')?.updated_at),
+  )
+
+  // 휴대폰: 목록이 비어 칸에서 자리만 되살린 상태
+  const phone = migrate({ timeCategories: [], days: { '2026-09-10': painted('2026-09-10', 'c1') } })
+  check('자리가 되살아난다', phone.timeCategories[0]?.recovered === true, JSON.stringify(phone.timeCategories))
+
+  // 휴대폰이 처음 로그인해 전부 올릴 대상으로 잡아도
+  const phoneState = markEverythingDirty(phone, emptySyncState())
+  check('되살린 자리는 올릴 목록에 없다', phoneState.dirtyTimeCategories.c1 === undefined, JSON.stringify(phoneState.dirtyTimeCategories))
+
+  const out = await syncOnce(fakeClient(store), phone, phoneState)
+  check('서버의 이름이 그대로 남는다', row(store, 'timeCategory', 'c1')?.data.label === '연구실', JSON.stringify(store.objects))
+  check('휴대폰이 진짜 이름을 받아간다', out.data.timeCategories[0]?.label === '연구실', JSON.stringify(out.data.timeCategories))
+  check('받아온 뒤에는 껍데기가 아니다', out.data.timeCategories[0]?.recovered !== true)
+
+  const back = await syncOnce(fakeClient(store), laptop, emptySyncState())
+  check('노트북의 이름도 그대로', back.data.timeCategories[0]?.label === '연구실', JSON.stringify(back.data.timeCategories))
+  check('칠해둔 시간도 그대로', back.data.days['2026-09-10'].timeSlots.filter(Boolean).length === 6)
+}
+
+// ── 26. 서버에 이미 올라간 껍데기는 진짜 이름이 밀어낸다 ───────────────────
+//
+// 고치기 전에 올라간 '이름 없는 유형'이 서버에 남아 있다. 시각만 최신이라
+// 그냥 두면 또 덮는다. 이름을 가진 쪽이 진짜이므로 그 줄을 무시하고,
+// 내 이름을 다시 올려 서버의 껍데기를 밀어낸다.
+{
+  const store: Store = { days: [], objects: [] , settings: null }
+  store.objects.push({
+    kind: 'timeCategory',
+    id: 'c1',
+    data: { id: 'c1', label: '이름 없는 유형 1', colorIndex: 0, updatedAt: 0 },
+    deleted: false,
+    updated_at: 9_999_999_999_999, // 고치기 전 Date.now()로 올라간 값
+    server_updated_at: '2026-09-12T00:00:00.000Z',
+  })
+
+  const laptop = makeData({
+    timeCategories: [{ id: 'c1', label: '연구실', colorIndex: 0, updatedAt: 8000 }],
+  })
+  const out = await syncOnce(fakeClient(store), laptop, emptySyncState())
+  check('껍데기가 로컬 이름을 못 덮는다', out.data.timeCategories[0]?.label === '연구실', JSON.stringify(out.data.timeCategories))
+  check('되찾을 이름을 다시 올릴 대상으로 잡는다', out.state.dirtyTimeCategories.c1 === true, JSON.stringify(out.state.dirtyTimeCategories))
+
+  // 다시 돌리면 서버의 껍데기를 실제로 밀어낸다
+  const after = await syncOnce(fakeClient(store), out.data, out.state)
+  check('서버의 껍데기가 밀려난다', row(store, 'timeCategory', 'c1')?.data.label === '연구실', JSON.stringify(store.objects))
+  check('대기열이 비워진다', Object.keys(after.state.dirtyTimeCategories).length === 0, JSON.stringify(after.state.dirtyTimeCategories))
+
+  // 다른 기기도 그 이름을 받아간다
+  const phone = await syncOnce(fakeClient(store), makeData({}), emptySyncState())
+  check('다른 기기도 진짜 이름을 받는다', phone.data.timeCategories[0]?.label === '연구실', JSON.stringify(phone.data.timeCategories))
+}
+
+// ── 27. 무엇을 올려도 시각을 만들어내지 않는다 (종류 전부) ─────────────────
+//
+// 이름이 날아간 근본 원인은 올리는 쪽에서 시각을 만들어낸 것이었다.
+// 한 종류만 고치면 다음에 다른 종류에서 같은 일이 난다.
+{
+  const store: Store = { days: [], objects: [], settings: null }
+  const local = makeData({
+    people: [{ id: 'p0', name: '영', relation: '', colorIndex: 0, createdAt: 0, updatedAt: 0 }],
+    content: [{ id: 'x0', kind: 'book', title: '영', byline: '', url: '', colorIndex: 0, createdAt: 0, updatedAt: 0 }],
+    thoughts: [{ id: 't0', level: 'sentence', title: '', text: '영', parentId: null, createdAt: 0, updatedAt: 0 }],
+    routines: [{ id: 'r0', title: '영', time: null, createdAt: 0, updatedAt: 0 }],
+    timeCategories: [{ id: 'k0', label: '영', colorIndex: 0, updatedAt: 0 }],
+  })
+  await syncOnce(fakeClient(store), local, markEverythingDirty(local, emptySyncState()))
+  const invented = store.objects.filter((r) => r.updated_at !== 0)
+  check(
+    '0인 시각이 0으로 올라간다',
+    invented.length === 0,
+    JSON.stringify(invented.map((r) => [r.kind, r.updated_at])),
+  )
+
+  // 그러므로 서버에 이미 있는 값을 덮지 못한다
+  const server: Store = { days: [], objects: [], settings: null }
+  for (const kind of ['person', 'content', 'thought', 'routine']) {
+    server.objects.push({
+      kind,
+      id: 'z1',
+      data: { id: 'z1', name: '서버', title: '서버', text: '서버', label: '서버', updatedAt: 5000 },
+      deleted: false,
+      updated_at: 5000,
+      server_updated_at: '2026-09-12T00:00:00.000Z',
+    })
+  }
+  const stale = makeData({
+    people: [{ id: 'z1', name: '옛것', relation: '', colorIndex: 0, createdAt: 0, updatedAt: 0 }],
+    content: [{ id: 'z1', kind: 'book', title: '옛것', byline: '', url: '', colorIndex: 0, createdAt: 0, updatedAt: 0 }],
+    thoughts: [{ id: 'z1', level: 'sentence', title: '', text: '옛것', parentId: null, createdAt: 0, updatedAt: 0 }],
+    routines: [{ id: 'z1', title: '옛것', time: null, createdAt: 0, updatedAt: 0 }],
+  })
+  await syncOnce(fakeClient(server), stale, markEverythingDirty(stale, emptySyncState()))
+  const overwritten = server.objects.filter((r) => r.data.updatedAt !== 5000)
+  check(
+    '시각이 0인 값은 서버의 값을 덮지 못한다',
+    overwritten.length === 0,
+    JSON.stringify(overwritten.map((r) => r.kind)),
+  )
+}
+
 console.log(`\n${pass} passed, ${fail} failed`)
 if (fail > 0) process.exit(1)

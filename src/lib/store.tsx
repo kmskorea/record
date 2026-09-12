@@ -210,16 +210,26 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     }
   }, [configVersion])
 
-  // 로그인되면 이 기기의 기록을 전부 올릴 대상으로 잡고 첫 동기화를 돈다.
   const signedInUser = session?.user.id ?? null
   useEffect(() => {
     if (!signedInUser) {
       setPhase(loadConfig() ? 'signed-out' : 'unconfigured')
       return
     }
-    const next = markEverythingDirty(dataRef.current, syncStateRef.current)
-    syncStateRef.current = next
-    commitState(next)
+    /**
+     * 이 기기가 아직 서버와 한 번도 맞춰본 적이 없을 때만 전부 올릴 대상으로
+     * 잡는다(커서가 비어 있다 = 받아온 것이 없다). 서버가 텅 비어 있어도
+     * 로컬 기록이 사라지지 않게 하는 장치다.
+     *
+     * 예전에는 앱을 열 때마다 돌았다. 그러면 매번 모든 기록을 다시 올리는데,
+     * 올리는 값이 조금이라도 잘못되면(실제로 '이름 없는 유형'이 그랬다)
+     * 켤 때마다 다른 기기의 멀쩡한 값을 덮는다. 한 번의 실수가 매일 반복됐다.
+     */
+    if (syncStateRef.current.cursor === null) {
+      const next = markEverythingDirty(dataRef.current, syncStateRef.current)
+      syncStateRef.current = next
+      commitState(next)
+    }
     void runSync()
   }, [signedInUser, commitState, runSync])
 
@@ -669,7 +679,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       const nextData: AppData = {
         ...dataRef.current,
         timeCategories: dataRef.current.timeCategories.map((c) =>
-          c.id === id ? { ...c, label: clean, updatedAt: Date.now() } : c,
+          // 이름을 얻었으니 더 이상 껍데기가 아니다. 이제 올려야 한다.
+          c.id === id ? { ...c, label: clean, updatedAt: Date.now(), recovered: false } : c,
         ),
       }
       dataRef.current = nextData

@@ -1,4 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
+import { RECOVERED_LABEL } from './types'
 import type {
   AppData,
   ContentItem,
@@ -96,6 +97,13 @@ interface Identified {
   updatedAt: number
 }
 
+/** 이름을 모르는 껍데기인지. 되살린 표시가 있거나, 되살릴 때 붙는 이름이면. */
+function isPlaceholder(v: unknown): boolean {
+  const c = (v ?? {}) as { recovered?: boolean; label?: unknown }
+  if (c.recovered === true) return true
+  return typeof c.label === 'string' && c.label.startsWith(RECOVERED_LABEL)
+}
+
 /** 올릴 한 줄. 목록에 없으면 지운 것이므로 묘비를 올린다. */
 function outgoing<T extends Identified>(
   kind: string,
@@ -105,7 +113,11 @@ function outgoing<T extends Identified>(
 ) {
   const item = byId.get(id)
   if (item) {
-    return { kind, id, data: item, deleted: false, updated_at: item.updatedAt || Date.now() }
+    // 시각을 절대 만들어내지 않는다. 예전에는 0을 falsy로 보고 Date.now()를
+    // 붙였는데, 그러면 '항상 지도록' 만든 0이 오히려 제일 새것이 되어
+    // 다른 기기의 진짜 값을 덮었다.
+    const at = typeof item.updatedAt === 'number' ? item.updatedAt : 0
+    return { kind, id, data: item, deleted: false, updated_at: at }
   }
   // 줄을 없애지 말고 지웠다고 표시한다. 그냥 지우면 다른 기기가 되살린다.
   return { kind, id, data: { id }, deleted: true, updated_at: tombstones[id] ?? Date.now() }
@@ -355,10 +367,30 @@ export async function syncOnce(
     incoming[CONTENT_KIND] ?? [],
     nextState.dirtyContent,
   )
+  /**
+   * 고치기 전에 어느 기기가 올려버린 '이름 없는 유형'이 서버에 남아 있다.
+   * 그 줄은 시각만 최신이라 그냥 두면 이름을 가진 쪽을 또 덮는다.
+   *
+   * 이름을 가진 쪽이 진짜다. 그런 줄은 버리고, 대신 내 이름을 다시 올릴
+   * 대상으로 잡아 서버의 껍데기를 밀어낸다.
+   */
+  const catRows: ObjectRow[] = []
+  /** 되찾을 이름과, 서버에 있는 껍데기의 시각(이보다 새것이어야 밀어낸다) */
+  const reassertCats = new Map<string, number>()
+  const localCats = new Map(next.timeCategories.map((c) => [c.id, c]))
+  for (const row of incoming[TIME_CATEGORY_KIND] ?? []) {
+    const local = localCats.get(row.id)
+    if (isPlaceholder(row.data) && local && !isPlaceholder(local)) {
+      reassertCats.set(row.id, Math.max(reassertCats.get(row.id) ?? 0, row.updated_at))
+      continue
+    }
+    catRows.push(row)
+  }
+
   const mergedCats = mergeIncoming<TimeCategory>(
     next.timeCategories,
     next.deletedTimeCategories,
-    incoming[TIME_CATEGORY_KIND] ?? [],
+    catRows,
     nextState.dirtyTimeCategories,
   )
   const mergedKinds = mergeIncoming<ContentKindDef>(
@@ -383,9 +415,23 @@ export async function syncOnce(
   const deletedPeople = mergedPeople.tombstones
   const content = mergedContent.items
   const deletedContent = mergedContent.tombstones
+  // 되찾아야 할 이름은 서버의 껍데기보다 반드시 새 시각으로 올린다.
+  // '지금'으로만 하면 상대 시각이 앞서 있을 때(기기 시계가 틀렸거나 미래
+  // 값이 박혀 있을 때) 못 밀어낸다.
+  let assertedCats = mergedCats.items
+  if (reassertCats.size > 0) {
+    assertedCats = assertedCats.map((c) => {
+      const beat = reassertCats.get(c.id)
+      return beat === undefined ? c : { ...c, updatedAt: Math.max(Date.now(), beat + 1) }
+    })
+    nextState.dirtyTimeCategories = { ...nextState.dirtyTimeCategories }
+    for (const id of reassertCats.keys()) nextState.dirtyTimeCategories[id] = true
+    changed = true
+  }
+
   // 서버에서 받아온 날에도 목록에 없는 유형이 있을 수 있다. 화면에서 사라지지
   // 않도록 여기서도 자리를 만들어 둔다.
-  const timeCategories = recoverOrphanCategories(days, mergedCats.items)
+  const timeCategories = recoverOrphanCategories(days, assertedCats)
   const deletedTimeCategories = mergedCats.tombstones
   const customContentKinds = mergedKinds.items
   const deletedContentKinds = mergedKinds.tombstones
@@ -467,7 +513,9 @@ export function markEverythingDirty(data: AppData, state: SyncState): SyncState 
   for (const item of data.content) dirtyContent[item.id] = true
   for (const id of Object.keys(data.deletedContent)) dirtyContent[id] = true
   const dirtyTimeCategories: Record<string, true> = { ...state.dirtyTimeCategories }
-  for (const c of data.timeCategories) dirtyTimeCategories[c.id] = true
+  // 되살린 자리는 올리지 않는다. 이름을 모르는 껍데기가 다른 기기의
+  // 진짜 이름을 덮어서는 안 된다.
+  for (const c of data.timeCategories) if (!c.recovered) dirtyTimeCategories[c.id] = true
   for (const id of Object.keys(data.deletedTimeCategories)) dirtyTimeCategories[id] = true
   const dirtyContentKinds: Record<string, true> = { ...state.dirtyContentKinds }
   for (const k of data.customContentKinds) dirtyContentKinds[k.id] = true
