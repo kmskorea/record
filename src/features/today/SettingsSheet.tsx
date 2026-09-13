@@ -2,7 +2,7 @@ import { useRef, useState } from 'react'
 import { Sheet, Switch } from '../../components/ui'
 import { DownloadIcon, UploadIcon } from '../../components/icons'
 import { useStore } from '../../lib/store'
-import { exportJSON, loadSnapshot, parseImport } from '../../lib/storage'
+import { exportJSON, loadDailyBackups, loadSnapshot, parseImport } from '../../lib/storage'
 import { AccountSection } from './AccountSection'
 import {
   notificationsSupported,
@@ -13,7 +13,7 @@ import {
 import { formatKorean, toKey, todayKey } from '../../lib/date'
 
 export function SettingsSheet({ onClose }: { onClose: () => void }) {
-  const { data, setNotifications, replaceAll } = useStore()
+  const { data, setNotifications, replaceAll, repullAll, republishAll, session } = useStore()
   const n = data.notifications
   const [perm, setPerm] = useState<NotificationPermission>(() => permission())
   const [message, setMessage] = useState<string | null>(null)
@@ -61,7 +61,9 @@ export function SettingsSheet({ onClose }: { onClose: () => void }) {
     }
   }
 
-  const snapshot = loadSnapshot()
+  // 시트를 열 때 한 번만 읽는다. 매 렌더마다 통째로 파싱할 것은 아니다.
+  const [snapshot] = useState(loadSnapshot)
+  const [backups] = useState(loadDailyBackups)
 
   return (
     <Sheet title="설정" subtitle={`${dayCount}일 기록 · ${data.people.length}명`} onClose={onClose}>
@@ -180,6 +182,35 @@ export function SettingsSheet({ onClose }: { onClose: () => void }) {
           }}
         />
 
+        {backups.length > 0 && (
+          <>
+            <div className="banner" style={{ marginTop: 12 }}>
+              앱을 열 때 하루에 한 벌씩 이 기기에 예비를 남겨둡니다. 기록이 갑자기 비었다면 여기서
+              되돌리세요.
+            </div>
+            {backups.map((b) => (
+              <button
+                key={b.date}
+                type="button"
+                className="btn ghost block"
+                style={{ marginTop: 8 }}
+                onClick={() => {
+                  if (
+                    confirm(
+                      `${formatKorean(b.date)}에 남긴 예비(${b.days}일치, 반추 ${b.data.thoughts.length}개)로 되돌립니다. 지금 기기의 기록은 덮어써집니다. 계속할까요?`,
+                    )
+                  ) {
+                    replaceAll(b.data)
+                    setMessage(`${formatKorean(b.date)}의 예비로 되돌렸습니다.`)
+                  }
+                }}
+              >
+                {formatKorean(b.date)} 예비로 되돌리기 ({b.days}일치)
+              </button>
+            ))}
+          </>
+        )}
+
         {snapshot && (
           <>
             <div className="banner" style={{ marginTop: 12 }}>
@@ -203,6 +234,53 @@ export function SettingsSheet({ onClose }: { onClose: () => void }) {
           </>
         )}
       </section>
+
+      {session && (
+        <section className="card">
+          <header className="card-head">
+            <h2 className="card-title">
+              <i className="mark" style={{ background: 'var(--brown)' }} />
+              기록 되찾기
+            </h2>
+          </header>
+          <p className="card-note" style={{ marginBottom: 12 }}>
+            어느 한쪽에서만 기록이 사라졌을 때 씁니다. 어느 쪽이 성한지 보고 고르세요.
+          </p>
+          <button
+            type="button"
+            className="btn ghost block"
+            onClick={() => {
+              repullAll()
+              setMessage('서버에 있는 것을 처음부터 다시 받고 있습니다.')
+            }}
+          >
+            서버에서 전부 다시 받기
+          </button>
+          <p className="card-note" style={{ margin: '6px 0 12px' }}>
+            이 기기에서만 빠졌을 때. 올리는 것이 없어 다른 기기는 그대로입니다.
+          </p>
+          <button
+            type="button"
+            className="btn ghost block"
+            onClick={() => {
+              if (
+                confirm(
+                  '이 기기의 기록을 서버에 다시 세웁니다.\n\n' +
+                    '다른 기기에 더 새로 적은 것이 있으면 그쪽이 밀립니다. 이 기기의 기록이 성할 때만 누르세요.',
+                )
+              ) {
+                republishAll()
+                setMessage('이 기기의 기록을 서버에 다시 올리고 있습니다.')
+              }
+            }}
+          >
+            이 기기 기록을 서버에 다시 세우기
+          </button>
+          <p className="card-note" style={{ marginTop: 6 }}>
+            서버에서 사라졌을 때. 이 기기의 기록이 다른 기기의 것을 덮습니다.
+          </p>
+        </section>
+      )}
 
       {message && <div className="banner">{message}</div>}
 

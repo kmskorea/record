@@ -104,13 +104,35 @@ function isPlaceholder(v: unknown): boolean {
   return typeof c.label === 'string' && c.label.startsWith(RECOVERED_LABEL)
 }
 
-/** 올릴 한 줄. 목록에 없으면 지운 것이므로 묘비를 올린다. */
+interface OutgoingRow {
+  kind: string
+  id: string
+  data: unknown
+  deleted: boolean
+  updated_at: number
+}
+
+/**
+ * 올릴 한 줄.
+ *
+ * **없다는 것을 지웠다는 뜻으로 읽지 않는다.** 이 규칙이 이 파일에서 제일
+ * 중요하다. 묘비는 '사용자가 지웠다'는 사실이 묘비 목록에 적혀 있을 때만
+ * 올린다. 손에 없다는 이유로 묘비를 만들면, 그 묘비는 만들어진 순간의
+ * 시각을 달고 있어 무엇보다 새것이 되고, 모든 기기에서 그 기록을 지운다.
+ *
+ * 올릴 목록과 기록이 어긋나는 길은 실제로 여럿이다.
+ *  - 옛 번들이 자기가 모르는 칸(반추·루틴 …)을 떨어뜨리고 저장한 뒤,
+ *    새 번들이 다시 열릴 때. 올릴 목록은 통째로 펼쳐 담기 때문에 살아남는다.
+ *  - 저장 공간이 꽉 차 기록 쓰기만 실패했을 때.
+ *  - 백업을 불러와 기록이 통째로 바뀌었을 때(옛 id가 목록에 남는다).
+ * 어느 쪽이든 '모르겠다'이지 '지웠다'가 아니다. 그러면 올리지 않고 넘어간다.
+ */
 function outgoing<T extends Identified>(
   kind: string,
   id: string,
   byId: Map<string, T>,
   tombstones: Record<string, number>,
-) {
+): OutgoingRow | null {
   const item = byId.get(id)
   if (item) {
     // 시각을 절대 만들어내지 않는다. 예전에는 0을 falsy로 보고 Date.now()를
@@ -119,8 +141,13 @@ function outgoing<T extends Identified>(
     const at = typeof item.updatedAt === 'number' ? item.updatedAt : 0
     return { kind, id, data: item, deleted: false, updated_at: at }
   }
-  // 줄을 없애지 말고 지웠다고 표시한다. 그냥 지우면 다른 기기가 되살린다.
-  return { kind, id, data: { id }, deleted: true, updated_at: tombstones[id] ?? Date.now() }
+  const grave = tombstones[id]
+  if (typeof grave === 'number') {
+    // 줄을 없애지 말고 지웠다고 표시한다. 그냥 지우면 다른 기기가 되살린다.
+    return { kind, id, data: { id }, deleted: true, updated_at: grave }
+  }
+  console.warn(`올릴 ${kind} ${id}이(가) 기록에 없습니다. 지운 적이 없으므로 올리지 않습니다`)
+  return null
 }
 
 /**
@@ -286,8 +313,10 @@ export async function syncOnce(
       ...dirtyRoutines.map((id) =>
         outgoing(ROUTINE_KIND, id, routinesById, next.deletedRoutines),
       ),
-    ]
-    const { error } = await client.rpc('merge_objects', { rows })
+    ].filter((r): r is OutgoingRow => r !== null)
+    const { error } = rows.length === 0
+      ? { error: null }
+      : await client.rpc('merge_objects', { rows })
     if (error && !isMissingSchema(error)) throw error
     if (error) {
       // 못 올렸으니 표시를 지우지 않는다. 스키마를 실행하면 그대로 올라간다.
