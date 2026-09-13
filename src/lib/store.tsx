@@ -39,6 +39,8 @@ import {
   saveSnapshot,
   saveSyncState,
   keepDailyBackup,
+  blockedIdeas,
+  migrateIdeas,
   type SyncState,
 } from './storage'
 import { todayKey } from './date'
@@ -76,6 +78,8 @@ interface StoreValue {
   renameTimeCategory: (id: string, label: string) => void
   deleteTimeCategory: (id: string) => void
   replaceAll: (next: AppData) => void
+  /** 묘비에 막혀 못 돌아오던 옛 아이디어를 반추로 되살린다. 되살린 수를 준다. */
+  reviveIdeas: () => number
   /** 서버에 있는 것을 처음부터 다시 받는다. 이 기기에서 사라진 기록을 되찾는 쪽. */
   repullAll: () => void
   /** 이 기기의 기록을 서버에 다시 세운다. 서버에서 사라진 기록을 되찾는 쪽. */
@@ -735,6 +739,38 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   )
 
   /**
+   * 묘비를 걷어내고 옛 아이디어를 반추로 다시 세운다.
+   *
+   * 앱이 만들어낸 가짜 묘비가 되살리기를 막고 있을 때 쓴다. 걷어낸 뒤 지금
+   * 시각으로 찍어 올려야 서버에 남은 묘비도 밀어낼 수 있다.
+   */
+  const reviveIdeas = useCallback<StoreValue['reviveIdeas']>(() => {
+    const cur = dataRef.current
+    const blocked = blockedIdeas(cur.days, cur.deletedThoughts)
+    if (blocked.length === 0) return 0
+    const graves = { ...cur.deletedThoughts }
+    /** 밀어내야 할 묘비의 시각. 이보다 새것이어야 서버에서도 되살아난다. */
+    const beat = new Map<string, number>()
+    for (const id of blocked) {
+      beat.set(id, cur.deletedThoughts[id])
+      delete graves[id]
+    }
+    // '지금'으로만 찍으면, 기기 시계가 틀려 미래 시각이 박힌 묘비는 못 이긴다.
+    const revived = migrateIdeas(cur.days, cur.thoughts, graves).map((t) => {
+      const grave = beat.get(t.id)
+      return grave === undefined ? t : { ...t, updatedAt: Math.max(Date.now(), grave + 1) }
+    })
+    const next: AppData = { ...cur, thoughts: revived, deletedThoughts: graves }
+    dataRef.current = next
+    commit(next, (s) => {
+      const dirtyThoughts = { ...s.dirtyThoughts }
+      for (const id of blocked) dirtyThoughts[id] = true
+      return { ...s, dirtyThoughts }
+    })
+    return blocked.length
+  }, [commit])
+
+  /**
    * 서버에 있는 것을 처음부터 다시 받아온다.
    *
    * 평소에는 커서 뒤로 바뀐 것만 받는다. 그래서 어떤 사고로 이 기기에서만
@@ -859,6 +895,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       renameTimeCategory,
       deleteTimeCategory,
       replaceAll,
+      reviveIdeas,
       repullAll,
       republishAll,
       sync,
@@ -896,6 +933,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       renameTimeCategory,
       deleteTimeCategory,
       replaceAll,
+      reviveIdeas,
       repullAll,
       republishAll,
       sync,

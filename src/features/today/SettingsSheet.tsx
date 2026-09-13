@@ -2,7 +2,13 @@ import { useRef, useState } from 'react'
 import { Sheet, Switch } from '../../components/ui'
 import { DownloadIcon, UploadIcon } from '../../components/icons'
 import { useStore } from '../../lib/store'
-import { exportJSON, loadDailyBackups, loadSnapshot, parseImport } from '../../lib/storage'
+import {
+  blockedIdeas,
+  exportJSON,
+  loadDailyBackups,
+  loadSnapshot,
+  parseImport,
+} from '../../lib/storage'
 import { AccountSection } from './AccountSection'
 import {
   notificationsSupported,
@@ -13,7 +19,8 @@ import {
 import { formatKorean, toKey, todayKey } from '../../lib/date'
 
 export function SettingsSheet({ onClose }: { onClose: () => void }) {
-  const { data, setNotifications, replaceAll, repullAll, republishAll, session } = useStore()
+  const { data, setNotifications, replaceAll, reviveIdeas, repullAll, republishAll, session } =
+    useStore()
   const n = data.notifications
   const [perm, setPerm] = useState<NotificationPermission>(() => permission())
   const [message, setMessage] = useState<string | null>(null)
@@ -64,6 +71,8 @@ export function SettingsSheet({ onClose }: { onClose: () => void }) {
   // 시트를 열 때 한 번만 읽는다. 매 렌더마다 통째로 파싱할 것은 아니다.
   const [snapshot] = useState(loadSnapshot)
   const [backups] = useState(loadDailyBackups)
+  // 되살릴 거리가 있을 때만 물어본다
+  const blocked = blockedIdeas(data.days, data.deletedThoughts).length
 
   return (
     <Sheet title="설정" subtitle={`${dayCount}일 기록 · ${data.people.length}명`} onClose={onClose}>
@@ -181,6 +190,26 @@ export function SettingsSheet({ onClose }: { onClose: () => void }) {
             e.target.value = ''
           }}
         />
+
+        {blocked > 0 && (
+          <>
+            <div className="banner" style={{ marginTop: 12 }}>
+              반추가 비었는데 하루 기록 안에는 옛 아이디어 {blocked}개의 글이 그대로 남아 있습니다.
+              반추에서 일부러 지웠던 것도 같이 돌아옵니다.
+            </div>
+            <button
+              type="button"
+              className="btn ghost block"
+              style={{ marginTop: 8 }}
+              onClick={() => {
+                const n = reviveIdeas()
+                setMessage(`옛 아이디어 ${n}개를 반추의 문장으로 되살렸습니다.`)
+              }}
+            >
+              옛 아이디어 {blocked}개 반추로 되살리기
+            </button>
+          </>
+        )}
 
         {backups.length > 0 && (
           <>
