@@ -1068,5 +1068,38 @@ function contentDay(date: string, itemId: string, quote: string, updatedAt: numb
   check('되돌아온 뒤에도 자식의 parentId는 그대로다', withParent[0].parentId === 'p1')
 }
 
+// ── 33. 하루 기록과 설정도 시각을 만들어내지 않는다 ────────────────────────
+// 한 번도 손대지 않은 값(시각 0)에 지금 시각을 붙여 올리면, 손댄 적 없는
+// 빈 값이 서버의 진짜 기록을 덮는다. 시간 유형이 날아갔던 것과 같은 길이다.
+{
+  const server: Store = { days: [], objects: [], settings: null }
+  const real = makeData({
+    days: { '2026-09-01': day('2026-09-01', '진짜로 적은 하루', 5000) },
+    customWorkoutParts: ['클라이밍'],
+    settingsUpdatedAt: 5000,
+  })
+  await syncOnce(fakeClient(server), real, markEverythingDirty(real, emptySyncState()))
+
+  // 손댄 적 없는 기기 — 하루도 설정도 시각이 0이다
+  const untouched = makeData({ days: { '2026-09-01': day('2026-09-01', '', 0) } })
+  await syncOnce(fakeClient(server), untouched, markEverythingDirty(untouched, emptySyncState()))
+  check(
+    '손대지 않은 하루가 진짜 하루를 덮지 않는다',
+    server.days[0]?.data?.reflection === '진짜로 적은 하루',
+    JSON.stringify(server.days[0]?.data?.reflection),
+  )
+  check('그 하루는 시각 0으로 올라간다', server.days[0]?.updated_at === 5000, String(server.days[0]?.updated_at))
+  check(
+    '손대지 않은 설정이 진짜 설정을 덮지 않는다',
+    JSON.stringify(server.settings?.data?.customWorkoutParts) === '["클라이밍"]',
+    JSON.stringify(server.settings?.data),
+  )
+
+  // 그 기기는 다음 조회에서 진짜 값을 받아간다
+  const healed = await syncOnce(fakeClient(server), untouched, emptySyncState())
+  check('손대지 않았던 기기가 진짜 하루를 받아간다', healed.data.days['2026-09-01'].reflection === '진짜로 적은 하루')
+  check('운동 부위도 받아간다', healed.data.customWorkoutParts.join() === '클라이밍', JSON.stringify(healed.data.customWorkoutParts))
+}
+
 console.log(`\n${pass} passed, ${fail} failed`)
 if (fail > 0) process.exit(1)
