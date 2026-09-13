@@ -38,6 +38,7 @@ import {
   save,
   saveSnapshot,
   saveSyncState,
+  keepDailyBackup,
   type SyncState,
 } from './storage'
 import { todayKey } from './date'
@@ -75,6 +76,10 @@ interface StoreValue {
   renameTimeCategory: (id: string, label: string) => void
   deleteTimeCategory: (id: string) => void
   replaceAll: (next: AppData) => void
+  /** 서버에 있는 것을 처음부터 다시 받는다. 이 기기에서 사라진 기록을 되찾는 쪽. */
+  repullAll: () => void
+  /** 이 기기의 기록을 서버에 다시 세운다. 서버에서 사라진 기록을 되찾는 쪽. */
+  republishAll: () => void
 
   // 동기화 / 계정
   sync: SyncReport
@@ -117,6 +122,11 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     saveSyncState(next)
   }, [])
 
+  // 열 때 하루에 한 벌씩 예비를 떠 둔다. 무슨 일이 나도 돌아갈 곳을 남긴다.
+  useEffect(() => {
+    keepDailyBackup(dataRef.current, todayKey())
+  }, [])
+
   useEffect(() => {
     const tick = () => setToday(todayKey())
     const id = window.setInterval(tick, 30_000)
@@ -128,10 +138,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   }, [])
 
   useEffect(() => {
-    const persist = () => {
-      flush(dataRef.current)
-      saveSyncState(syncStateRef.current)
-    }
+    // 기록을 먼저, 올릴 목록을 그다음. 한 번에 같이 쓴다.
+    const persist = () => flush(dataRef.current, syncStateRef.current)
     window.addEventListener('pagehide', persist)
     const onHide = () => {
       if (document.visibilityState === 'hidden') persist()
@@ -726,6 +734,51 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     [commit],
   )
 
+  /**
+   * 서버에 있는 것을 처음부터 다시 받아온다.
+   *
+   * 평소에는 커서 뒤로 바뀐 것만 받는다. 그래서 어떤 사고로 이 기기에서만
+   * 기록이 빠지면, 서버에는 멀쩡히 있어도 영영 다시 내려오지 않는다.
+   * 커서를 지워 전부 다시 받게 하는 것이 그 경우의 해답이다. 올리는 것은
+   * 없으므로 이 버튼이 다른 기기의 기록을 건드릴 일은 없다.
+   */
+  const repullAll = useCallback<StoreValue['repullAll']>(() => {
+    const next: SyncState = { ...syncStateRef.current, cursor: null }
+    syncStateRef.current = next
+    commitState(next)
+    void runSync()
+  }, [commitState, runSync])
+
+  /**
+   * 이 기기의 기록을 서버에 다시 세운다.
+   *
+   * 반대 방향의 사고 — 서버 쪽에서 기록이 지워졌을 때 쓴다. 서버의 줄을
+   * 이기려면 시각이 더 새로워야 하므로 전부 지금 시각으로 찍어 올린다.
+   * 그만큼 센 동작이라, 다른 기기에 더 새 수정이 있었다면 그쪽이 밀린다.
+   * 사용자가 분명히 고를 때만 부른다.
+   */
+  const republishAll = useCallback<StoreValue['republishAll']>(() => {
+    const now = Date.now()
+    const cur = dataRef.current
+    const stamp = <T extends { updatedAt: number }>(x: T): T => ({ ...x, updatedAt: now })
+    const next: AppData = {
+      ...cur,
+      days: Object.fromEntries(
+        Object.entries(cur.days).map(([date, day]) => [date, { ...day, updatedAt: now }]),
+      ),
+      people: cur.people.map(stamp),
+      content: cur.content.map(stamp),
+      thoughts: cur.thoughts.map(stamp),
+      routines: cur.routines.map(stamp),
+      // 이름을 모르는 껍데기는 빼둔다. 다른 기기의 진짜 이름을 덮으면 안 된다.
+      timeCategories: cur.timeCategories.map((c) => (c.recovered ? c : stamp(c))),
+      customContentKinds: cur.customContentKinds.map(stamp),
+      settingsUpdatedAt: now,
+    }
+    dataRef.current = next
+    commit(next, (s) => markEverythingDirty(next, s))
+  }, [commit])
+
   const replaceAll = useCallback<StoreValue['replaceAll']>(
     (next) => {
       // 통째로 갈아엎기 전에 되돌아갈 지점을 남긴다.
@@ -806,6 +859,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       renameTimeCategory,
       deleteTimeCategory,
       replaceAll,
+      repullAll,
+      republishAll,
       sync,
       session,
       remoteConfigured: Boolean(loadConfig()),
@@ -841,6 +896,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       renameTimeCategory,
       deleteTimeCategory,
       replaceAll,
+      repullAll,
+      republishAll,
       sync,
       session,
       setRemoteConfig,

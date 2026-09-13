@@ -3,6 +3,7 @@ import { Card, Empty } from '../../components/ui'
 import { PlusIcon } from '../../components/icons'
 import { useStore } from '../../lib/store'
 import { formatRelative, toKey } from '../../lib/date'
+import { looseThoughts } from '../../lib/storage'
 import { THOUGHT_LEVELS, THOUGHT_LEVEL, type Thought, type ThoughtLevel } from '../../lib/types'
 import { ThoughtSheet } from './ThoughtSheet'
 
@@ -27,9 +28,7 @@ export function ReflectScreen() {
       paragraph: [],
       essay: [],
     }
-    for (const t of thoughts) {
-      if (t.parentId === null) byLevel[t.level].push(t)
-    }
+    for (const t of looseThoughts(thoughts)) byLevel[t.level].push(t)
     for (const list of Object.values(byLevel)) list.sort((a, b) => b.createdAt - a.createdAt)
     return byLevel
   }, [thoughts])
@@ -40,6 +39,12 @@ export function ReflectScreen() {
   }, [thoughts, selected])
 
   const up = selectedLevel ? THOUGHT_LEVEL[selectedLevel].up : null
+
+  /** 넣을 수 있는 자리. 이미 글에 들어간 단락에도 넣을 수 있어야 한다. */
+  const attachTargets = useMemo(
+    () => (up ? thoughts.filter((t) => t.level === up) : []),
+    [thoughts, up],
+  )
 
   const toggle = (t: Thought) => {
     setAttaching(false)
@@ -169,25 +174,19 @@ export function ReflectScreen() {
             <>
               <span className="pick-count">어디에 넣을까요?</span>
               <div className="pick-targets">
-                {loose[up ?? 'paragraph']
-                  .concat(
-                    // 이미 글에 들어간 단락에도 넣을 수 있어야 한다
-                    thoughts.filter((t) => t.level === up && t.parentId !== null),
-                  )
-                  .map((target) => (
-                    <button
-                      key={target.id}
-                      type="button"
-                      className="chip"
-                      onClick={() => attach(target.id)}
-                    >
-                      {target.title || target.text.slice(0, 12) || '이름 없음'}
-                    </button>
-                  ))}
-                {loose[up ?? 'paragraph'].length === 0 &&
-                  !thoughts.some((t) => t.level === up && t.parentId !== null) && (
-                    <span className="pick-count dim">넣을 곳이 아직 없어요</span>
-                  )}
+                {attachTargets.map((target) => (
+                  <button
+                    key={target.id}
+                    type="button"
+                    className="chip"
+                    onClick={() => attach(target.id)}
+                  >
+                    {target.title || target.text.slice(0, 12) || '이름 없음'}
+                  </button>
+                ))}
+                {attachTargets.length === 0 && (
+                  <span className="pick-count dim">넣을 곳이 아직 없어요</span>
+                )}
               </div>
               <button type="button" className="btn ghost sm" onClick={() => setAttaching(false)}>
                 뒤로

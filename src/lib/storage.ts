@@ -165,6 +165,21 @@ export function migrateIdeas(
   return moved.length === 0 ? thoughts : [...thoughts, ...moved]
 }
 
+/**
+ * 아직 아무 데도 안 묶인 생각. 반추 목록에 세울 것들이다.
+ *
+ * 부모가 사라진 것도 여기에 넣는다. parentId만 남고 그 부모가 없으면 목록에도
+ * 안 나오고 열어볼 곳도 없어서, 저장은 멀쩡히 돼 있는데 어디에서도 안 보인다.
+ * 칸이 유형 id를 잃어 시간표가 통째로 비어 보이던 것과 똑같은 모양의 사고다.
+ *
+ * 기록은 건드리지 않고 보여주기만 되돌린다. 부모가 나중에 서버에서 돌아오면
+ * 묶여 있던 모양도 그대로 돌아온다.
+ */
+export function looseThoughts(thoughts: Thought[]): Thought[] {
+  const known = new Set(thoughts.map((t) => t.id))
+  return thoughts.filter((t) => t.parentId === null || !known.has(t.parentId))
+}
+
 export function recoverOrphanCategories(
   days: Record<ISODate, DayRecord>,
   categories: TimeCategory[],
@@ -421,6 +436,19 @@ export function migrate(input: unknown): AppData {
   )
 
   return {
+    /**
+     * 모르는 칸도 그대로 안고 간다.
+     *
+     * 여기는 아는 칸만 골라 새 그릇에 담는 자리라, 예전 번들이 이 함수를 돌리면
+     * 자기가 모르는 칸(반추·루틴처럼 나중에 생긴 것)을 통째로 떨어뜨린 채
+     * 저장해버린다. 동기화의 '올릴 목록'은 통째로 펼쳐 담아 살아남으므로,
+     * 다음에 새 번들로 열면 '올릴 것은 있는데 그게 없는' 상태가 된다.
+     * 캐시에 남은 옛 번들 한 번이 기능 하나의 기록을 통째로 날릴 수 있다.
+     *
+     * 아래에서 아는 칸을 전부 덮어쓰므로, 살아남는 것은 이 번들이 모르는
+     * 칸뿐이다. 모르면 건드리지 않는 것이 맞다.
+     */
+    ...raw,
     version: VERSION,
     days,
     people,
@@ -463,20 +491,64 @@ export function migrate(input: unknown): AppData {
 }
 
 let saveTimer: number | undefined
+let pendingData: AppData | null = null
+let pendingSync: SyncState | null = null
+
+/**
+ * 기록과 '올릴 목록'은 한 몸이다. 반드시 함께, 기록을 먼저 쓴다.
+ *
+ * 예전에는 기록만 250ms 미뤄 쓰고 올릴 목록은 즉시 썼다. 그러면 그 사이에
+ * 앱이 꺼지거나 저장이 실패할 때 '올릴 것은 t1인데 t1이 어디에도 없는' 상태가
+ * 남는다. 목록이 기록보다 새것이 되는 이 어긋남이 기록을 날린 뿌리였다.
+ *
+ * 반대 방향(기록이 목록보다 새것)은 안전하다. 아직 표시가 안 된 기록은
+ * 그대로 있다가 다음에 손대면 올라간다. 잃는 것은 없다.
+ */
+function writeNow() {
+  if (saveTimer) {
+    clearTimeout(saveTimer)
+    saveTimer = undefined
+  }
+  const data = pendingData
+  const sync = pendingSync
+  pendingData = null
+  pendingSync = null
+  if (data) {
+    try {
+      localStorage.setItem(KEY, JSON.stringify(data))
+    } catch (err) {
+      console.error('기록을 저장하지 못했습니다', err)
+      alert('저장 공간이 부족해 기록을 저장하지 못했습니다. 설정에서 백업 후 정리해 주세요.')
+      // 기록을 못 썼으면 올릴 목록도 쓰지 않는다. 여기서 목록만 쓰면
+      // 다음에 켤 때 목록이 없는 기록을 가리킨다.
+      return
+    }
+  }
+  if (sync) {
+    try {
+      localStorage.setItem(SYNC_KEY, JSON.stringify(sync))
+    } catch (err) {
+      console.error('동기화 상태를 저장하지 못했습니다', err)
+    }
+  }
+}
+
+function schedule() {
+  if (saveTimer) clearTimeout(saveTimer)
+  saveTimer = window.setTimeout(writeNow, 250)
+}
 
 /** 입력 중 매 글자마다 직렬화하지 않도록 살짝 미뤄서 저장한다. */
 export function save(data: AppData) {
-  if (saveTimer) clearTimeout(saveTimer)
-  saveTimer = window.setTimeout(() => flush(data), 250)
+  pendingData = data
+  schedule()
 }
 
-export function flush(data: AppData) {
-  try {
-    localStorage.setItem(KEY, JSON.stringify(data))
-  } catch (err) {
-    console.error('기록을 저장하지 못했습니다', err)
-    alert('저장 공간이 부족해 기록을 저장하지 못했습니다. 설정에서 백업 후 정리해 주세요.')
-  }
+/** 미뤄둔 것까지 지금 당장 쓴다. 화면을 떠날 때 부른다. */
+export function flush(data?: AppData, sync?: SyncState) {
+  if (data) pendingData = data
+  if (sync) pendingSync = sync
+  writeNow()
 }
 
 // ─── 동기화 상태 ──────────────────────────────────────────────────────────────
@@ -525,12 +597,10 @@ export function loadSyncState(): SyncState {
   }
 }
 
+/** 기록과 같은 박자로 쓴다. 위 writeNow()의 주석을 보라. */
 export function saveSyncState(state: SyncState) {
-  try {
-    localStorage.setItem(SYNC_KEY, JSON.stringify(state))
-  } catch (err) {
-    console.error('동기화 상태를 저장하지 못했습니다', err)
-  }
+  pendingSync = state
+  schedule()
 }
 
 // ─── 되돌리기용 스냅샷 ────────────────────────────────────────────────────────
@@ -558,6 +628,69 @@ export function loadSnapshot(): { at: number; days: number; data: AppData } | nu
     return { at: parsed.at, days: parsed.days, data: migrate(parsed.data) }
   } catch {
     return null
+  }
+}
+
+// ─── 날마다 한 벌씩 남기는 예비 ────────────────────────────────────────────────
+
+const BACKUP_KEY = 'record.backup.v1'
+/** 예비가 먹어도 되는 최대치. localStorage는 대개 5MB 남짓이다. */
+const MAX_BACKUP_CHARS = 2_000_000
+
+export interface DailyBackup {
+  /** 남긴 날 */
+  date: ISODate
+  at: number
+  days: number
+  data: AppData
+}
+
+/**
+ * 하루에 한 번, 앱을 열 때 기록을 통째로 한 벌 떠 둔다. 두 벌까지 쌓는다.
+ *
+ * 동기화가 아무리 조심스러워도 '어제의 나'로 돌아갈 곳이 이 기기에 있어야
+ * 한다. 두 벌인 이유는, 사고를 알아차린 그날 이미 한 벌이 사고 이후 상태로
+ * 덮여 있을 수 있기 때문이다.
+ *
+ * 예비를 남기다 실패해도 본 기록 저장을 방해해서는 안 된다. 자리가 모자라면
+ * 옛 벌부터 버리고, 그래도 안 되면 조용히 포기한다.
+ */
+export function keepDailyBackup(data: AppData, todayDate: ISODate): void {
+  // 빈 기록으로 멀쩡한 예비를 덮지 않는다.
+  if (Object.keys(data.days).length === 0 && data.thoughts.length === 0) return
+  const kept = loadDailyBackups()
+  if (kept[0]?.date === todayDate) return
+  const entry: DailyBackup = {
+    date: todayDate,
+    at: Date.now(),
+    days: Object.keys(data.days).length,
+    data,
+  }
+  for (const list of [[entry, ...kept].slice(0, 2), [entry]]) {
+    const text = JSON.stringify(list)
+    // 예비가 자리를 다 먹어 정작 본 기록이 안 써지면 본말이 뒤집힌다.
+    if (text.length > MAX_BACKUP_CHARS) continue
+    try {
+      localStorage.setItem(BACKUP_KEY, text)
+      return
+    } catch {
+      // 자리가 모자란다. 옛 벌을 버리고 한 번 더.
+    }
+  }
+  console.warn('예비 기록을 남기지 못했습니다')
+}
+
+export function loadDailyBackups(): DailyBackup[] {
+  try {
+    const raw = localStorage.getItem(BACKUP_KEY)
+    if (!raw) return []
+    const parsed = JSON.parse(raw)
+    if (!Array.isArray(parsed)) return []
+    return parsed
+      .filter((b) => b && typeof b.date === 'string' && b.data)
+      .map((b) => ({ date: b.date, at: b.at ?? 0, days: b.days ?? 0, data: migrate(b.data) }))
+  } catch {
+    return []
   }
 }
 

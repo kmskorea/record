@@ -1,5 +1,5 @@
 import { syncOnce, markEverythingDirty, pendingCount } from '../src/lib/sync'
-import { emptySyncState, migrate, type SyncState } from '../src/lib/storage'
+import { emptySyncState, looseThoughts, migrate, type SyncState } from '../src/lib/storage'
 import { todoRate } from '../src/lib/metrics'
 import { emptyDay, type AppData, type ContentItem, type Person } from '../src/lib/types'
 
@@ -942,6 +942,130 @@ function contentDay(date: string, itemId: string, quote: string, updatedAt: numb
     overwritten.length === 0,
     JSON.stringify(overwritten.map((r) => r.kind)),
   )
+}
+
+// ── 28. 없다는 것을 지웠다는 뜻으로 읽지 않는다 ────────────────────────────
+// 반추가 통째로 날아간 사고의 재현. 옛 번들이 자기가 모르는 칸을 떨어뜨리고
+// 저장하면, 올릴 목록에는 id가 남는데 기록에는 없다. 예전에는 그 어긋남을
+// '지웠다'로 읽고 지금 시각을 단 묘비를 올려, 모든 기기에서 지워버렸다.
+{
+  const server: Store = { days: [], objects: [], settings: null }
+  const phone = makeData({
+    thoughts: [
+      { id: 't1', level: 'sentence', title: '', text: '문장 하나', parentId: null, createdAt: 1000, updatedAt: 1000 },
+      { id: 't2', level: 'sentence', title: '', text: '문장 둘', parentId: null, createdAt: 1100, updatedAt: 1100 },
+    ],
+    routines: [{ id: 'r1', title: '스트레칭', time: null, createdAt: 1000, updatedAt: 1000 }],
+  })
+  await syncOnce(fakeClient(server), phone, {
+    ...emptySyncState(),
+    dirtyThoughts: { t1: true, t2: true },
+    dirtyRoutines: { r1: true },
+  })
+  check('올린 직후 서버에 반추 2개가 산다', rowsOf(server, 'thought').length === 2)
+
+  // 기록만 비어 있고 올릴 목록은 그대로인 기기가 켜졌다
+  const skewed = makeData({})
+  const after = await syncOnce(fakeClient(server), skewed, {
+    ...emptySyncState(),
+    dirtyThoughts: { t1: true, t2: true },
+    dirtyRoutines: { r1: true },
+  })
+  const graves = server.objects.filter((r) => r.deleted)
+  check('기록에 없다고 묘비를 올리지 않는다', graves.length === 0, JSON.stringify(graves.map((r) => `${r.kind}:${r.id}`)))
+  check('그 기기도 서버에서 반추를 되받는다', after.data.thoughts.length === 2, JSON.stringify(after.data.thoughts))
+  check('그 기기도 루틴을 되받는다', after.data.routines.length === 1)
+
+  // 다른 기기가 나중에 켜져도 그대로다
+  const back = await syncOnce(fakeClient(server), phone, emptySyncState())
+  check(
+    '멀쩡했던 기기의 반추가 살아 있다',
+    back.data.thoughts.map((t) => t.text).join('/') === '문장 하나/문장 둘',
+    JSON.stringify(back.data.thoughts.map((t) => t.text)),
+  )
+}
+
+// ── 29. 진짜로 지운 것은 여전히 모든 기기에서 지워진다 ──────────────────────
+{
+  const server: Store = { days: [], objects: [], settings: null }
+  const withThought = makeData({
+    thoughts: [{ id: 't1', level: 'sentence', title: '', text: '지울 문장', parentId: null, createdAt: 1000, updatedAt: 1000 }],
+  })
+  await syncOnce(fakeClient(server), withThought, { ...emptySyncState(), dirtyThoughts: { t1: true } })
+
+  // 지우면 묘비가 남는다 (store.deleteThought가 하는 일과 같은 모양)
+  const deleted = makeData({ thoughts: [], deletedThoughts: { t1: 2000 } })
+  await syncOnce(fakeClient(server), deleted, { ...emptySyncState(), dirtyThoughts: { t1: true } })
+  const grave = row(server, 'thought', 't1')
+  check('지운 것은 묘비가 올라간다', grave?.deleted === true && grave?.updated_at === 2000, JSON.stringify(grave))
+
+  const other = await syncOnce(fakeClient(server), withThought, emptySyncState())
+  check('다른 기기에서도 지워진다', other.data.thoughts.length === 0)
+}
+
+// ── 30. 되살리기: 이 기기 기록을 서버에 다시 세운다 ────────────────────────
+// 이미 묘비가 올라간 뒤라도, 사용자가 고르면 성한 기기가 되찾아올 수 있어야 한다.
+{
+  const server: Store = { days: [], objects: [], settings: null }
+  server.objects.push({
+    kind: 'thought',
+    id: 't1',
+    data: { id: 't1' },
+    deleted: true,
+    updated_at: 9_000_000_000_000,
+    server_updated_at: '2026-09-12T00:00:00.000Z',
+  })
+  const healthy = makeData({
+    thoughts: [{ id: 't1', level: 'sentence', title: '', text: '되찾을 문장', parentId: null, createdAt: 1000, updatedAt: 1000 }],
+  })
+  // republishAll이 하는 일: 전부 지금 시각으로 찍고 전부 올릴 대상으로 잡는다
+  const now = 9_000_000_001_000
+  const stamped: AppData = { ...healthy, thoughts: healthy.thoughts.map((t) => ({ ...t, updatedAt: now })) }
+  const out = await syncOnce(fakeClient(server), stamped, markEverythingDirty(stamped, emptySyncState()))
+  const revived = row(server, 'thought', 't1')
+  check('다시 세우면 서버의 묘비를 이긴다', revived?.deleted === false, JSON.stringify(revived))
+  check('되살린 기기에도 문장이 남아 있다', out.data.thoughts.length === 1)
+}
+
+// ── 31. 모르는 칸을 떨어뜨리지 않는다 ──────────────────────────────────────
+// 옛 번들이 새 기능의 칸을 통째로 버리고 저장하던 것이 사고의 시작이었다.
+{
+  const kept = migrate({
+    days: {},
+    thoughts: [{ id: 't1', level: 'sentence', title: '', text: '문장', parentId: null, createdAt: 1, updatedAt: 1 }],
+    // 이 번들이 아직 모르는, 나중에 생길 칸
+    somethingNew: [{ id: 'x1', value: 42 }],
+  } as any)
+  check(
+    '모르는 칸도 그대로 안고 간다',
+    JSON.stringify((kept as any).somethingNew) === '[{"id":"x1","value":42}]',
+    JSON.stringify((kept as any).somethingNew),
+  )
+  check('아는 칸은 그대로 정리된다', kept.thoughts.length === 1 && kept.version === 1)
+  // 두 번 돌려도 같다
+  check('여러 번 돌려도 모양이 같다', JSON.stringify(migrate(kept)) === JSON.stringify(kept))
+}
+
+// ── 32. 부모가 사라진 문장도 목록에 보인다 ─────────────────────────────────
+{
+  const orphans = [
+    { id: 'c1', level: 'sentence' as const, title: '', text: '재료 하나', parentId: 'p1', createdAt: 2000, updatedAt: 2000 },
+    { id: 'c2', level: 'sentence' as const, title: '', text: '재료 둘', parentId: 'p1', createdAt: 2100, updatedAt: 2100 },
+  ]
+  check('부모가 없으면 목록에 세운다', looseThoughts(orphans).length === 2)
+
+  const withParent = [
+    ...orphans,
+    { id: 'p1', level: 'paragraph' as const, title: '단락', text: '', parentId: null, createdAt: 2200, updatedAt: 2200 },
+  ]
+  check(
+    '부모가 있으면 그 안에서만 본다',
+    looseThoughts(withParent).map((t) => t.id).join() === 'p1',
+    JSON.stringify(looseThoughts(withParent).map((t) => t.id)),
+  )
+
+  // 부모가 서버에서 돌아오면 묶임도 그대로 돌아온다 — 기록을 고치지 않았으므로
+  check('되돌아온 뒤에도 자식의 parentId는 그대로다', withParent[0].parentId === 'p1')
 }
 
 console.log(`\n${pass} passed, ${fail} failed`)
