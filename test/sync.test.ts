@@ -1,5 +1,12 @@
 import { syncOnce, markEverythingDirty, pendingCount } from '../src/lib/sync'
-import { emptySyncState, looseThoughts, migrate, type SyncState } from '../src/lib/storage'
+import {
+  blockedIdeas,
+  emptySyncState,
+  looseThoughts,
+  migrate,
+  migrateIdeas,
+  type SyncState,
+} from '../src/lib/storage'
 import { todoRate } from '../src/lib/metrics'
 import { emptyDay, type AppData, type ContentItem, type Person } from '../src/lib/types'
 
@@ -1099,6 +1106,43 @@ function contentDay(date: string, itemId: string, quote: string, updatedAt: numb
   const healed = await syncOnce(fakeClient(server), untouched, emptySyncState())
   check('손대지 않았던 기기가 진짜 하루를 받아간다', healed.data.days['2026-09-01'].reflection === '진짜로 적은 하루')
   check('운동 부위도 받아간다', healed.data.customWorkoutParts.join() === '클라이밍', JSON.stringify(healed.data.customWorkoutParts))
+}
+
+// ── 34. 묘비에 막힌 옛 아이디어를 되살릴 수 있다 ──────────────────────────
+// 하루 기록 안에는 글이 그대로 남아 있다. 가짜 묘비만 걷어내면 돌아온다.
+{
+  const days = {
+    '2026-09-01': {
+      ...emptyDay('2026-09-01'),
+      ideas: [
+        { id: 'i1', text: '스쳤던 생각 하나', at: 1000 },
+        { id: 'i2', text: '스쳤던 생각 둘', at: 1100 },
+      ],
+      updatedAt: 1000,
+    },
+  }
+  const wiped = makeData({ days, thoughts: [], deletedThoughts: { i1: 9_000_000_000_000, i2: 9_000_000_000_000 } })
+  check('묘비가 있으면 되살아나지 않는다', wiped.thoughts.length === 0, JSON.stringify(wiped.thoughts))
+  check('되살릴 거리를 알아본다', blockedIdeas(wiped.days, wiped.deletedThoughts).join() === 'i1,i2')
+
+  // store.reviveIdeas가 하는 일: 묘비를 걷고 다시 세운다
+  const graves = { ...wiped.deletedThoughts }
+  for (const id of blockedIdeas(wiped.days, wiped.deletedThoughts)) delete graves[id]
+  const revived = migrateIdeas(wiped.days, wiped.thoughts, graves)
+  check('글까지 그대로 돌아온다', revived.map((t) => t.text).join('/') === '스쳤던 생각 하나/스쳤던 생각 둘', JSON.stringify(revived.map((t) => t.text)))
+  check('id도 그대로다', revived.map((t) => t.id).join() === 'i1,i2')
+
+  // 지금 시각으로 찍어 올리면 서버의 묘비도 밀어낸다
+  const server: Store = { days: [], objects: [], settings: null }
+  server.objects.push({ kind: 'thought', id: 'i1', data: { id: 'i1' }, deleted: true, updated_at: 9_000_000_000_000, server_updated_at: '2026-09-12T00:00:00.000Z' })
+  const now = 9_000_000_001_000
+  const pushed: AppData = { ...wiped, thoughts: revived.map((t) => ({ ...t, updatedAt: now })), deletedThoughts: graves }
+  await syncOnce(fakeClient(server), pushed, { ...emptySyncState(), dirtyThoughts: { i1: true, i2: true } })
+  check('서버의 묘비도 밀어낸다', row(server, 'thought', 'i1')?.deleted === false, JSON.stringify(row(server, 'thought', 'i1')))
+
+  // 반추에서 일부러 지운 것은, 되살리기를 누르지 않는 한 그대로 남아 있다
+  const stillDeleted = makeData({ days, thoughts: [], deletedThoughts: { i1: 5000 } })
+  check('누르기 전에는 지운 것이 지워진 채다', stillDeleted.thoughts.map((t) => t.id).join() === 'i2', JSON.stringify(stillDeleted.thoughts.map((t) => t.id)))
 }
 
 console.log(`\n${pass} passed, ${fail} failed`)

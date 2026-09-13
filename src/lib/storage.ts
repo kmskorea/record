@@ -175,6 +175,29 @@ export function migrateIdeas(
  * 기록은 건드리지 않고 보여주기만 되돌린다. 부모가 나중에 서버에서 돌아오면
  * 묶여 있던 모양도 그대로 돌아온다.
  */
+/**
+ * 묘비에 막혀 못 돌아오는 옛 아이디어의 id.
+ *
+ * '오늘 > 아이디어'에 적었던 글은 하루 기록 안에 그대로 남아 있어서, 반추가
+ * 비어도 migrateIdeas가 다시 문장으로 세워준다. 단 묘비가 있으면 막는다 —
+ * 사용자가 반추에서 지운 것을 되살리지 않으려는 장치다.
+ *
+ * 그런데 이번처럼 앱이 만들어낸 가짜 묘비가 올라간 경우엔, 그 장치가 되레
+ * 되살리기를 막는다. 되살릴 거리가 있는지 세어 설정에서 물어보기 위한 자리다.
+ */
+export function blockedIdeas(
+  days: Record<ISODate, DayRecord>,
+  tombstones: Record<string, number>,
+): string[] {
+  const ids: string[] = []
+  for (const day of Object.values(days)) {
+    for (const idea of day.ideas) {
+      if (idea?.id && tombstones[idea.id] && !ids.includes(idea.id)) ids.push(idea.id)
+    }
+  }
+  return ids
+}
+
 export function looseThoughts(thoughts: Thought[]): Thought[] {
   const known = new Set(thoughts.map((t) => t.id))
   return thoughts.filter((t) => t.parentId === null || !known.has(t.parentId))
