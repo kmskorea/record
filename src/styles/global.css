@@ -2104,6 +2104,28 @@ input[type='number'] {
   color: var(--ink-3);
 }
 
+/* 고치기·삭제. 본문 폭을 너무 먹지 않도록 조금 작게 둔다. */
+.thought-acts {
+  display: flex;
+  align-self: center;
+  flex-shrink: 0;
+  margin-right: -8px;
+}
+.thought-acts .icon-btn {
+  width: 30px;
+  height: 30px;
+}
+.thought-acts .icon-btn svg {
+  width: 17px;
+  height: 17px;
+}
+
+/* 품고 있는 것도 눌러서 바로 고칠 수 있다 */
+.thought-child-body {
+  text-align: left;
+  background: transparent;
+}
+
 .thought-dot {
   flex-shrink: 0;
   width: 9px;

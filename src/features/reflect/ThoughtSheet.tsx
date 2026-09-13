@@ -1,6 +1,6 @@
 import { useMemo } from 'react'
 import { Empty, Sheet } from '../../components/ui'
-import { TrashIcon } from '../../components/icons'
+import { ArrowUpIcon, PencilIcon, TrashIcon } from '../../components/icons'
 import { useStore } from '../../lib/store'
 import { formatRelative, toKey } from '../../lib/date'
 import { THOUGHT_LEVEL } from '../../lib/types'
@@ -49,17 +49,20 @@ export function ThoughtSheet({
       onClose={onClose}
     >
       <section className="card">
-        <label className="field">
-          <span className="field-label">{level.label} 이름</span>
-          <input
-            className="input"
-            placeholder="무엇에 대한 생각인가요?"
-            value={thought.title}
-            onChange={(e) => updateThought(thought.id, { title: e.target.value })}
-          />
-        </label>
+        {/* 이름은 단락·글의 것이다. 문장은 적은 그대로가 전부다. */}
+        {thought.level !== 'sentence' && (
+          <label className="field">
+            <span className="field-label">{level.label} 이름</span>
+            <input
+              className="input"
+              placeholder="무엇에 대한 생각인가요?"
+              value={thought.title}
+              onChange={(e) => updateThought(thought.id, { title: e.target.value })}
+            />
+          </label>
+        )}
 
-        <label className="field" style={{ marginTop: 14 }}>
+        <label className="field" style={{ marginTop: thought.level === 'sentence' ? 0 : 14 }}>
           <span className="field-label">{level.bodyLabel}</span>
           <textarea
             className="textarea"
@@ -85,6 +88,7 @@ export function ThoughtSheet({
         )}
       </section>
 
+      {thought.level !== 'sentence' && (
       <section className="card" style={{ paddingBottom: 14 }}>
         <header className="card-head">
           <h2 className="card-title">
@@ -104,29 +108,46 @@ export function ThoughtSheet({
                   className="thought-dot"
                   style={{ background: THOUGHT_LEVEL[child.level].color }}
                 />
-                <div className="body">
+                <button
+                  type="button"
+                  className="body thought-child-body"
+                  onClick={() => onOpen(child.id)}
+                >
                   {child.title && <div style={{ fontSize: 13, fontWeight: 700 }}>{child.title}</div>}
                   <p>{child.text || '(비어 있음)'}</p>
                   <div className="time">{formatRelative(toKey(new Date(child.createdAt)))}</div>
-                </div>
+                </button>
                 <span style={{ display: 'flex', flexShrink: 0 }}>
-                  {child.level !== 'sentence' && (
-                    <button
-                      type="button"
-                      className="btn sm ghost"
-                      onClick={() => onOpen(child.id)}
-                    >
-                      열기
-                    </button>
-                  )}
                   <button
                     type="button"
                     className="icon-btn plain"
-                    aria-label={`${child.text.slice(0, 10)} 빼내기`}
+                    aria-label={`${child.title || child.text} 고치기`}
+                    title="고치기"
+                    onClick={() => onOpen(child.id)}
+                  >
+                    <PencilIcon />
+                  </button>
+                  <button
+                    type="button"
+                    className="icon-btn plain"
+                    aria-label={`${child.title || child.text} 빼내기`}
                     title="빼내기"
                     onClick={() => setThoughtParent(child.id, null)}
                   >
-                    ↥
+                    <ArrowUpIcon />
+                  </button>
+                  <button
+                    type="button"
+                    className="icon-btn plain"
+                    aria-label={`${child.title || child.text} 삭제`}
+                    title="삭제"
+                    onClick={() => {
+                      if (confirm(`이 ${THOUGHT_LEVEL[child.level].label}을 지울까요?`)) {
+                        deleteThought(child.id)
+                      }
+                    }}
+                  >
+                    <TrashIcon />
                   </button>
                 </span>
               </div>
@@ -134,6 +155,7 @@ export function ThoughtSheet({
           </div>
         )}
       </section>
+      )}
 
       <button
         type="button"
