@@ -72,6 +72,20 @@ export const TrashIcon = (p: P) => (
   </svg>
 )
 
+/** 품고 있던 것을 위로 빼낼 때 */
+export const ArrowUpIcon = (p: P) => (
+  <svg {...base} {...p}>
+    <path d="M12 19V6M6 11l6-6 6 6" />
+  </svg>
+)
+
+export const PencilIcon = (p: P) => (
+  <svg {...base} {...p}>
+    <path d="M4 20h4L19 9a2.5 2.5 0 0 0-3.5-3.5L4.5 16.5z" />
+    <path d="M14.5 6.5 17.5 9.5" />
+  </svg>
+)
+
 export const ChevronLeft = (p: P) => (
   <svg {...base} {...p}>
     <path d="m14.5 5-7 7 7 7" />

@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import { Card, Empty } from '../../components/ui'
-import { PlusIcon } from '../../components/icons'
+import { PencilIcon, PlusIcon, TrashIcon } from '../../components/icons'
 import { useStore } from '../../lib/store'
 import { formatRelative, toKey } from '../../lib/date'
 import { looseThoughts } from '../../lib/storage'
@@ -13,7 +13,7 @@ function countChildren(thoughts: Thought[], id: string): number {
 }
 
 export function ReflectScreen() {
-  const { data, addThought, groupThoughts, setThoughtParent } = useStore()
+  const { data, addThought, deleteThought, groupThoughts, setThoughtParent } = useStore()
   const [draft, setDraft] = useState('')
   const [selected, setSelected] = useState<string[]>([])
   const [openId, setOpenId] = useState<string | null>(null)
@@ -59,6 +59,24 @@ export function ReflectScreen() {
   const clear = () => {
     setSelected([])
     setAttaching(false)
+  }
+
+  /**
+   * 지우기 전에 무엇이 같이 사라지는지 알려준다. 품고 있던 것은 지워지지 않고
+   * 목록으로 돌아오지만, 그 사실을 모르면 무서워서 못 지운다.
+   */
+  const remove = (t: Thought) => {
+    const label = THOUGHT_LEVEL[t.level].label
+    const childLabel = t.level === 'essay' ? '단락' : '문장'
+    const kids = countChildren(thoughts, t.id)
+    const warn =
+      kids > 0
+        ? `\n\n품고 있던 ${childLabel} ${kids}개는 지워지지 않고 반추 목록으로 돌아갑니다.`
+        : ''
+    if (!confirm(`이 ${label}을 지울까요?${warn}`)) return
+    deleteThought(t.id)
+    setSelected((prev) => prev.filter((x) => x !== t.id))
+    if (openId === t.id) setOpenId(null)
   }
 
   const submitDraft = () => {
@@ -154,6 +172,26 @@ export function ReflectScreen() {
                         {children > 0 && ` · ${children}개 품음`}
                       </span>
                     </button>
+                    <span className="thought-acts">
+                      <button
+                        type="button"
+                        className="icon-btn plain"
+                        aria-label={`${t.title || t.text} 고치기`}
+                        title="고치기"
+                        onClick={() => setOpenId(t.id)}
+                      >
+                        <PencilIcon />
+                      </button>
+                      <button
+                        type="button"
+                        className="icon-btn plain"
+                        aria-label={`${t.title || t.text} 삭제`}
+                        title="삭제"
+                        onClick={() => remove(t)}
+                      >
+                        <TrashIcon />
+                      </button>
+                    </span>
                   </div>
                 )
               })}
