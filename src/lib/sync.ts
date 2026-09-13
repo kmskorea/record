@@ -251,7 +251,9 @@ export async function syncOnce(
       .map((date) => ({
         date,
         data: next.days[date],
-        updated_at: next.days[date].updatedAt || Date.now(),
+        // 0은 '한 번도 손대지 않았다'는 뜻이다. 여기서 지금 시각을 붙이면
+        // 손댄 적 없는 빈 하루가 서버의 진짜 기록을 덮는다. 시각은 만들지 않는다.
+        updated_at: next.days[date].updatedAt,
       }))
     if (rows.length > 0) {
       // 그냥 upsert하면 오래 안 켠 기기가 서버의 최신본을 덮어쓴다.
@@ -268,7 +270,9 @@ export async function syncOnce(
   if (state.settingsDirty) {
     const { error } = await client.rpc('merge_settings', {
       payload: settingsPayload(next),
-      at: next.settingsUpdatedAt || Date.now(),
+      // 설정을 실제로 바꿀 때마다 시각이 찍힌다. 0이면 이 기기는 손댄 적이
+      // 없다는 뜻이니, 지금 시각을 만들어 붙여 서버의 설정을 덮으면 안 된다.
+      at: next.settingsUpdatedAt,
     })
     if (error) throw error
     nextState.settingsDirty = false
